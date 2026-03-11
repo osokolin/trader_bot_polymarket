@@ -17,7 +17,7 @@ The repository currently includes:
 - CLI operator tooling
 - lightweight operator dashboard UI
 
-See [docs/ARCHITECTURE.md](/Users/osokolin/IdeaProjects/trader_bot_polymarket/docs/ARCHITECTURE.md), [docs/CONFIG_REFERENCE.md](/Users/osokolin/IdeaProjects/trader_bot_polymarket/docs/CONFIG_REFERENCE.md), and [docs/SEMI_AUTO_WORKFLOW.md](/Users/osokolin/IdeaProjects/trader_bot_polymarket/docs/SEMI_AUTO_WORKFLOW.md).
+See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md), [docs/CONFIG_REFERENCE.md](./docs/CONFIG_REFERENCE.md), and [docs/SEMI_AUTO_WORKFLOW.md](./docs/SEMI_AUTO_WORKFLOW.md).
 
 ## Local Setup
 
@@ -108,6 +108,13 @@ Available UI areas:
 - outcome analysis
 - saved views
 - export pages for decision reviews, execution evaluations, and outcome analysis
+
+## UI Screenshots
+
+![Dashboard Home](./docs/images/ui-dashboard-home.png)
+![Proposal Detail](./docs/images/ui-proposal-detail.png)
+![Integrated Decision Review](./docs/images/ui-decision-review.png)
+![Outcome Analysis](./docs/images/ui-outcome-analysis.png)
 
 ## Demo Workflow
 
