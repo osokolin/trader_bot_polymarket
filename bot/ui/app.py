@@ -44,6 +44,114 @@ class OperatorDashboardServices:
 
 
 class OperatorDashboardApp:
+    FIELD_LABELS = {
+        "scope": "Область",
+        "market_id": "ID рынка",
+        "proposal_id": "ID предложения",
+        "intent_id": "ID намерения",
+        "review_id": "ID разбора",
+        "snapshot_id": "ID снимка",
+        "previous_snapshot_id": "ID предыдущего снимка",
+        "evaluation_id": "ID оценки",
+        "execution_id": "ID исполнения",
+        "market_title": "Название рынка",
+        "market_category": "Категория рынка",
+        "status": "Статус",
+        "confidence": "Уверенность",
+        "edge": "Преимущество",
+        "size_usd": "Размер, USD",
+        "filled_size_usd": "Исполнено, USD",
+        "limit_price": "Лимитная цена",
+        "current_price": "Текущая цена",
+        "market_price": "Рыночная цена",
+        "fair_probability": "Справедливая вероятность",
+        "source_count": "Количество источников",
+        "created_at": "Создано",
+        "updated_at": "Обновлено",
+        "expires_at": "Истекает",
+        "returned": "Возвращено",
+        "state": "Состояние",
+        "watchlist_only": "Только watchlist",
+        "entity": "Сущность",
+        "alert_type": "Тип алерта",
+        "summary": "Сводка",
+        "reason": "Причина",
+        "side": "Сторона",
+        "timeline_events": "Событий в таймлайне",
+        "latest_execution_status": "Статус последнего исполнения",
+        "reference_price": "Опорная цена",
+        "simulated_price": "Смоделированная цена",
+        "completion_reason": "Причина завершения",
+        "latency_ms": "Задержка, мс",
+        "verdict": "Вердикт",
+        "research_summary": "Сводка исследования",
+        "data_age_seconds": "Возраст данных, сек",
+        "drift_summary": "Сводка дрейфа",
+        "group_by": "Группировка",
+        "since_hours": "Окно, часов",
+        "kind": "Тип",
+        "params": "Параметры",
+        "price_delta": "Отклонение цены",
+        "size_fill_ratio": "Доля исполнения объема",
+        "latency_delta_ms": "Отклонение задержки, мс",
+        "actual_completion_reason": "Фактическая причина завершения",
+        "confidence_outcome": "Итог по уверенности",
+        "probability_outcome": "Итог по вероятности",
+        "execution_outcome": "Итог по исполнению",
+        "source_count_delta": "Изменение количества источников",
+        "confidence_delta": "Изменение уверенности",
+        "fair_probability_delta": "Изменение вероятности",
+        "proposal_snapshot": "Снимок предложения",
+        "fill_timestamp": "Время исполнения",
+    }
+
+    VALUE_LABELS = {
+        "approved": "одобрено",
+        "pending_manual_confirmation": "ожидает ручного подтверждения",
+        "policy_rejected": "отклонено политиками",
+        "rejected": "отклонено",
+        "expired": "истекло",
+        "cancelled": "отменено",
+        "created": "создано",
+        "prepared": "подготовлено",
+        "blocked": "заблокировано",
+        "superseded": "замещено",
+        "submission_rejected": "отклонено на отправке",
+        "submission_disabled": "отправка отключена",
+        "submission_accepted": "отправка принята",
+        "simulated_filled": "смоделировано: исполнено",
+        "simulated_partial_fill": "смоделировано: частичное исполнение",
+        "simulated_expired": "смоделировано: истекло",
+        "simulated_cancelled": "смоделировано: отменено",
+        "open": "открыт",
+        "acknowledged": "подтвержден",
+        "dismissed": "скрыт",
+        "resolved": "решен",
+        "proposal": "предложение",
+        "market": "рынок",
+        "intent": "намерение",
+        "outcomes": "итоги",
+        "learning_summary": "обучающая сводка",
+        "better_than_expected": "лучше ожиданий",
+        "within_expected_range": "в пределах ожиданий",
+        "worse_than_expected": "хуже ожиданий",
+        "partially_filled": "частично исполнено",
+        "confidence_held": "уверенность сохранилась",
+        "confidence_degraded": "уверенность снизилась",
+        "probability_moved_in_favor": "вероятность сдвинулась в пользу",
+        "probability_moved_against": "вероятность сдвинулась против",
+        "execution_favorable": "исполнение благоприятное",
+        "execution_unfavorable": "исполнение неблагоприятное",
+        "not_simulated": "не моделировалось",
+        "proposal_ttl_nearing": "предложение близко к TTL",
+        "approved_proposal_stale": "одобренное предложение устарело",
+        "intent_superseded": "намерение замещено",
+        "simulated_execution_recorded": "записано смоделированное исполнение",
+        "warning": "предупреждение",
+        "info": "инфо",
+        "critical": "критично",
+    }
+
     def __init__(self, services: OperatorDashboardServices) -> None:
         self.services = services
 
@@ -54,9 +162,9 @@ class OperatorDashboardApp:
         except ValueError as exc:
             status = "404 Not Found"
             body = page(
-                "Not Found",
-                hero("Operator UI", "Requested entity is unavailable.")
-                + panel("Lookup Error", f'<div class="empty">{escape(str(exc))}</div>'),
+                "Не найдено",
+                hero("Интерфейс оператора", "Запрошенная сущность недоступна.")
+                + panel("Ошибка поиска", f'<div class="empty">{escape(str(exc))}</div>'),
             )
         return status, body
 
@@ -124,8 +232,8 @@ class OperatorDashboardApp:
         if path.startswith("/views/"):
             return "200 OK", self._saved_view_detail(path.split("/")[2])
         return "404 Not Found", page(
-            "Not Found",
-            hero("Operator UI", "Unknown page") + panel("Missing", '<div class="empty">Route not found.</div>'),
+            "Не найдено",
+            hero("Интерфейс оператора", "Неизвестная страница") + panel("Маршрут не найден", '<div class="empty">Страница не найдена.</div>'),
         )
 
     def _home(self) -> str:
@@ -140,56 +248,56 @@ class OperatorDashboardApp:
         body = ""
         body += summary_cards(
             [
-                ("open alerts", len(open_alerts), "operator action required"),
-                ("active proposals", len(active_proposals), "pending or approved"),
-                ("active intents", len(active_intents), "created or prepared"),
-                ("saved views", len(self.services.saved_view_service.list_all()), "reusable filters"),
+                ("открытые алерты", len(open_alerts), "требуют внимания оператора"),
+                ("активные предложения", len(active_proposals), "ожидают решения или уже одобрены"),
+                ("активные намерения", len(active_intents), "созданы или подготовлены"),
+                ("сохраненные виды", len(self.services.saved_view_service.list_all()), "переиспользуемые фильтры"),
             ]
         )
         body += '<div class="grid">'
         body += panel(
-            "Open Alerts",
+            "Открытые алерты",
             list_items(
                 [self._alert_item(alert) for alert in open_alerts[:5]],
-                "No open alerts.",
+                "Нет открытых алертов.",
             )
-            + link_row([("all alerts", "/alerts")]),
+            + link_row([("все алерты", "/alerts")]),
         )
         body += panel(
-            "Active Proposals",
+            "Активные предложения",
             list_items(
                 [
                     self._status_item(
                         proposal.proposal_id,
                         proposal.status.value,
                         f"/proposals/{proposal.proposal_id}",
-                        f"{proposal.market_title} | edge={proposal.edge:.4f} confidence={proposal.confidence:.2f}",
+                        f"{proposal.market_title} | преимущество={proposal.edge:.4f} уверенность={proposal.confidence:.2f}",
                         tone="good" if proposal.status.value == "approved" else "warn",
                     )
                     for proposal in active_proposals[:5]
                 ],
-                "No active proposals.",
+                "Нет активных предложений.",
             )
-            + link_row([("all proposals", "/proposals?scope=active"), ("latest approved", "/proposals/latest-approved")]),
+            + link_row([("все предложения", "/proposals?scope=active"), ("последнее одобренное", "/proposals/latest-approved")]),
         )
         body += panel(
-            "Active Intents",
+            "Активные намерения",
             list_items(
                 [
                     self._status_item(
                         intent.intent_id,
                         intent.status.value,
                         f"/intents/{intent.intent_id}",
-                        f"proposal={intent.proposal_id} size={intent.size_usd:.2f}",
+                        f"предложение={intent.proposal_id} размер={intent.size_usd:.2f}",
                     )
                     for intent in active_intents[:5]
                 ],
-                "No active intents.",
+                "Нет активных намерений.",
             )
-            + link_row([("all intents", "/intents?scope=active"), ("latest terminal", "/intents/latest-terminal")]),
+            + link_row([("все намерения", "/intents?scope=active"), ("последнее терминальное", "/intents/latest-terminal")]),
         )
         body += panel(
-            "Latest Decision Reviews",
+            "Последние разборы решений",
             list_items(
                 [
                     self._status_item(
@@ -201,12 +309,12 @@ class OperatorDashboardApp:
                     )
                     for review in recent_reviews
                 ],
-                "No decision reviews yet.",
+                "Разборов решений пока нет.",
             )
-            + link_row([("decision reviews", "/decision-reviews")]),
+            + link_row([("разборы решений", "/decision-reviews")]),
         )
         body += panel(
-            "Latest Outcome Analysis",
+            "Последний анализ итогов",
             list_items(
                 [
                     self._status_item(
@@ -218,12 +326,12 @@ class OperatorDashboardApp:
                     )
                     for snapshot in recent_analyses
                 ],
-                "No analysis snapshots yet.",
+                "Снимков анализа пока нет.",
             )
-            + link_row([("analysis", "/analysis"), ("saved views", "/views")]),
+            + link_row([("анализ", "/analysis"), ("сохраненные виды", "/views")]),
         )
         body += panel(
-            "Latest Evaluations",
+            "Последние оценки исполнения",
             list_items(
                 [
                     self._status_item(
@@ -235,14 +343,14 @@ class OperatorDashboardApp:
                     )
                     for item in latest_evaluations
                 ],
-                "No execution evaluations yet.",
+                "Оценок исполнения пока нет.",
             ),
         )
         body += panel(
-            "Latest Simulation",
-            '<div class="empty">No simulated execution yet.</div>'
+            "Последняя симуляция",
+            '<div class="empty">Смоделированных исполнений пока нет.</div>'
             if latest_simulation is None
-            else kv_table(
+            else self._kv(
                 [
                     ("execution_id", latest_simulation.execution_id),
                     ("intent_id", latest_simulation.intent_id),
@@ -251,18 +359,18 @@ class OperatorDashboardApp:
                     ("completion_reason", latest_simulation.completion_reason or "-"),
                 ]
             )
-            + link_row([("intent detail", f"/intents/{latest_simulation.intent_id}")]),
+            + link_row([("карточка намерения", f"/intents/{latest_simulation.intent_id}")]),
         )
         body += panel(
-            "Recent Alerts",
-            list_items([self._alert_item(alert) for alert in recent_alerts], "No alerts yet.")
-            + link_row([("alert queue", "/alerts")]),
+            "Недавние алерты",
+            list_items([self._alert_item(alert) for alert in recent_alerts], "Алертов пока нет.")
+            + link_row([("очередь алертов", "/alerts")]),
         )
         body += "</div>"
         return shell_page(
-            "Operator Dashboard",
-            "Operator Dashboard",
-            "Thin dashboard over persisted operator services and workflows.",
+            "Панель оператора",
+            "Панель оператора",
+            "Тонкий интерфейс поверх сохраненных сервисов и операторских сценариев.",
             body,
         )
 
@@ -272,11 +380,11 @@ class OperatorDashboardApp:
         market_id = self._query_value(query, "market_id")
         if market_id is not None:
             proposals = [item for item in proposals if item.market_id == market_id]
-        body = hero("Proposals", "List and detail views backed by the proposal lifecycle service.")
+        body = hero("Предложения", "Список и карточки, построенные на сервисе жизненного цикла предложений.")
         body += panel(
-            "Proposal List",
-            kv_table([("scope", scope), ("market_id", market_id or "-"), ("returned", len(proposals))])
-            + link_row([("latest approved", "/proposals/latest-approved"), ("saved views", "/views")])
+            "Список предложений",
+            self._kv([("scope", scope), ("market_id", market_id or "-"), ("returned", len(proposals))])
+            + link_row([("последнее одобренное", "/proposals/latest-approved"), ("сохраненные виды", "/views")])
             + list_items(
                 [
                     self._status_item(
@@ -284,26 +392,26 @@ class OperatorDashboardApp:
                         proposal.status.value,
                         f"/proposals/{proposal.proposal_id}",
                         (
-                            f"{proposal.market_title} | category={proposal.market_category} "
-                            f"confidence={proposal.confidence:.2f} size={proposal.current_size_usd:.2f}"
+                            f"{proposal.market_title} | категория={proposal.market_category} "
+                            f"уверенность={proposal.confidence:.2f} размер={proposal.current_size_usd:.2f}"
                         ),
                         tone="good" if proposal.status.value == "approved" else "warn",
                     )
                     for proposal in proposals
                 ],
-                "No proposals matched the filter.",
+                "По фильтру ничего не найдено.",
             ),
         )
-        return page("Proposals", body)
+        return page("Предложения", body)
 
     def _proposal_detail(self, proposal_id: str) -> str:
         proposal = self.services.proposal_service.latest_proposal_state(proposal_id)
         alerts = self.services.notifications_service.list_alerts_for_entity(WatchTargetType.PROPOSAL, proposal_id)
         latest_review = self.services.decision_review_service.latest_persisted_for_proposal(proposal_id)
-        body = hero("Proposal Detail", "Detail page using the proposal lifecycle service.")
+        body = hero("Карточка предложения", "Детальная страница на базе сервиса жизненного цикла предложений.")
         body += panel(
             proposal.proposal_id,
-            kv_table(
+            self._kv(
                 [
                     ("market_id", proposal.market_id),
                     ("market_title", proposal.market_title),
@@ -316,28 +424,28 @@ class OperatorDashboardApp:
                     ("expires_at", proposal.expires_at.isoformat()),
                 ]
             )
-            + chips(list(proposal.policy_decision.details.keys()), empty_message="no policy detail keys")
+            + chips(list(proposal.policy_decision.details.keys()), empty_message="нет деталей policy")
             + link_row(
                 [
-                    ("research snapshot", f"/research/proposals/{proposal.proposal_id}"),
-                    ("integrated decision review", f"/decision-reviews/proposals/{proposal.proposal_id}"),
+                    ("снимок исследования", f"/research/proposals/{proposal.proposal_id}"),
+                    ("интегрированный разбор решения", f"/decision-reviews/proposals/{proposal.proposal_id}"),
                 ]
             ),
-            meta="Thin detail view; proposal mutations remain in the service layer",
+            meta="Тонкая карточка; все изменения предложения остаются в сервисном слое.",
         )
         body += panel(
-            "Thesis and Risks",
-            chips(proposal.thesis, empty_message="no thesis points")
-            + chips(proposal.risks, empty_message="no risk points"),
+            "Тезисы и риски",
+            chips(proposal.thesis, empty_message="нет тезисов")
+            + chips(proposal.risks, empty_message="нет рисков"),
         )
         body += panel(
-            "Alerts",
-            list_items([self._alert_item(alert) for alert in alerts], "No proposal alerts."),
+            "Алерты",
+            list_items([self._alert_item(alert) for alert in alerts], "Для предложения нет алертов."),
         )
         if latest_review is not None:
             body += panel(
-                "Latest Decision Review",
-                kv_table(
+                "Последний разбор решения",
+                self._kv(
                     [
                         ("review_id", latest_review.review_id),
                         ("confidence_outcome", latest_review.confidence_outcome),
@@ -345,16 +453,16 @@ class OperatorDashboardApp:
                         ("execution_outcome", latest_review.execution_outcome),
                     ]
                 )
-                + link_row([("open review", f"/decision-reviews/proposals/{proposal.proposal_id}")]),
+                + link_row([("открыть разбор", f"/decision-reviews/proposals/{proposal.proposal_id}")]),
             )
-        return page(f"Proposal {proposal.proposal_id}", body)
+        return page(f"Предложение {proposal.proposal_id}", body)
 
     def _latest_approved_proposal(self) -> str:
         proposal = self.services.proposal_service.latest_approved_proposal()
-        body = hero("Latest Approved Proposal", "Latest lookup page.")
-        content = '<div class="empty">No approved proposal.</div>'
+        body = hero("Последнее одобренное предложение", "Страница быстрого перехода к последнему одобренному предложению.")
+        content = '<div class="empty">Нет одобренного предложения.</div>'
         if proposal is not None:
-            content = kv_table(
+            content = self._kv(
                 [
                     ("proposal_id", proposal.proposal_id),
                     ("market_title", proposal.market_title),
@@ -363,13 +471,13 @@ class OperatorDashboardApp:
                 ]
             ) + link_row(
                 [
-                    ("open detail", f"/proposals/{proposal.proposal_id}"),
-                    ("research", f"/research/proposals/{proposal.proposal_id}"),
-                    ("decision review", f"/decision-reviews/proposals/{proposal.proposal_id}"),
+                    ("открыть карточку", f"/proposals/{proposal.proposal_id}"),
+                    ("исследование", f"/research/proposals/{proposal.proposal_id}"),
+                    ("разбор решения", f"/decision-reviews/proposals/{proposal.proposal_id}"),
                 ]
             )
-        body += panel("Latest Approved", content)
-        return page("Latest Approved Proposal", body)
+        body += panel("Последнее одобренное", content)
+        return page("Последнее одобренное предложение", body)
 
     def _intent_list(self, query: dict[str, list[str]]) -> str:
         scope = self._query_value(query, "scope", "all")
@@ -377,25 +485,25 @@ class OperatorDashboardApp:
         proposal_id = self._query_value(query, "proposal_id")
         if proposal_id is not None:
             intents = [item for item in intents if item.proposal_id == proposal_id]
-        body = hero("Intents", "Thin UI over execution pipeline list/detail services.")
+        body = hero("Намерения", "Тонкий интерфейс поверх сервисов списка и карточек execution pipeline.")
         body += panel(
-            "Intent List",
-            kv_table([("scope", scope), ("proposal_id", proposal_id or "-"), ("returned", len(intents))])
-            + link_row([("latest terminal", "/intents/latest-terminal"), ("saved views", "/views")])
+            "Список намерений",
+            self._kv([("scope", scope), ("proposal_id", proposal_id or "-"), ("returned", len(intents))])
+            + link_row([("последнее терминальное", "/intents/latest-terminal"), ("сохраненные виды", "/views")])
             + list_items(
                 [
                     self._status_item(
                         intent.intent_id,
                         intent.status.value,
                         f"/intents/{intent.intent_id}",
-                        f"proposal={intent.proposal_id} size={intent.size_usd:.2f} limit={intent.limit_price:.4f}",
+                        f"предложение={intent.proposal_id} размер={intent.size_usd:.2f} лимит={intent.limit_price:.4f}",
                     )
                     for intent in intents
                 ],
-                "No intents matched the filter.",
+                "По фильтру ничего не найдено.",
             ),
         )
-        return page("Intents", body)
+        return page("Намерения", body)
 
     def _intent_detail(self, intent_id: str) -> str:
         intent = self.services.execution_service.latest_intent_state(intent_id)
@@ -403,7 +511,7 @@ class OperatorDashboardApp:
         evaluation = self.services.execution_evaluation_service.latest_persisted_for_intent(intent_id)
         timeline = self.services.execution_service.list_execution_timeline(intent_id)
         alerts = self.services.notifications_service.list_alerts_for_entity(WatchTargetType.INTENT, intent_id)
-        body = hero("Intent Detail", "Detail page using the execution pipeline service.")
+        body = hero("Карточка намерения", "Детальная страница на базе execution pipeline service.")
         rows = [
             ("proposal_id", intent.proposal_id),
             ("market_id", intent.market_id),
@@ -424,45 +532,45 @@ class OperatorDashboardApp:
                     ("latency_ms", "-" if execution.latency_ms is None else execution.latency_ms),
                 ]
             )
-        body += panel(intent.intent_id, kv_table(rows) + link_row([("proposal detail", f"/proposals/{intent.proposal_id}")]))
+        body += panel(intent.intent_id, self._kv(rows) + link_row([("карточка предложения", f"/proposals/{intent.proposal_id}")]))
         if evaluation is not None:
             body += panel(
-                "Latest Execution Evaluation",
-                kv_table([("verdict", evaluation.verdict), ("summary", evaluation.summary)]),
+                "Последняя оценка исполнения",
+                self._kv([("verdict", evaluation.verdict), ("summary", evaluation.summary)]),
             )
         body += panel(
-            "Timeline",
+            "Таймлайн",
             list_items(
                 [
                     item_link(
-                        event.event_type,
-                        f"fragment={event.fragment_index} size={event.size_usd:.2f}",
+                        self._display_value(event.event_type),
+                        f"фрагмент={event.fragment_index} размер={event.size_usd:.2f}",
                         f"/intents/{intent_id}",
-                        meta=f"price={event.price:.4f} latency_ms={event.latency_ms}",
+                        meta=f"цена={event.price:.4f} задержка_мс={event.latency_ms}",
                     )
                     for event in timeline
                 ],
-                "No simulated fill events.",
+                "Нет событий моделируемого исполнения.",
             ),
         )
-        body += panel("Alerts", list_items([self._alert_item(alert) for alert in alerts], "No intent alerts."))
-        return page(f"Intent {intent.intent_id}", body)
+        body += panel("Алерты", list_items([self._alert_item(alert) for alert in alerts], "Для намерения нет алертов."))
+        return page(f"Намерение {intent.intent_id}", body)
 
     def _latest_terminal_intent(self) -> str:
         intent = self.services.execution_service.latest_terminal_intent()
-        body = hero("Latest Terminal Intent", "Latest lookup page.")
-        content = '<div class="empty">No terminal intent.</div>'
+        body = hero("Последнее терминальное намерение", "Страница быстрого перехода к последнему терминальному намерению.")
+        content = '<div class="empty">Нет терминального намерения.</div>'
         if intent is not None:
-            content = kv_table(
+            content = self._kv(
                 [
                     ("intent_id", intent.intent_id),
                     ("proposal_id", intent.proposal_id),
                     ("status", intent.status.value),
                     ("updated_at", intent.updated_at.isoformat()),
                 ]
-            ) + link_row([("open detail", f"/intents/{intent.intent_id}"), ("proposal", f"/proposals/{intent.proposal_id}")])
-        body += panel("Latest Terminal", content)
-        return page("Latest Terminal Intent", body)
+            ) + link_row([("открыть карточку", f"/intents/{intent.intent_id}"), ("предложение", f"/proposals/{intent.proposal_id}")])
+        body += panel("Последнее терминальное", content)
+        return page("Последнее терминальное намерение", body)
 
     def _alert_list(self, query: dict[str, list[str]]) -> str:
         state_value = self._query_value(query, "state")
@@ -473,10 +581,10 @@ class OperatorDashboardApp:
         entity_id = self._query_value(query, "entity_id")
         if entity_type is not None and entity_id is not None:
             alerts = [alert for alert in alerts if alert.entity_type.value == entity_type and alert.entity_id == entity_id]
-        body = hero("Alerts", "Alert list view with state filtering and lifecycle actions.")
+        body = hero("Алерты", "Список алертов с фильтрацией по состоянию и действиями жизненного цикла.")
         body += panel(
-            "Alert List",
-            kv_table(
+            "Список алертов",
+            self._kv(
                 [
                     ("state", state_value or "-"),
                     ("watchlist_only", watchlist_only),
@@ -484,9 +592,9 @@ class OperatorDashboardApp:
                     ("returned", len(alerts)),
                 ]
             )
-            + list_items([self._alert_item(alert, include_actions=True) for alert in alerts], "No alerts matched the filter."),
+            + list_items([self._alert_item(alert, include_actions=True) for alert in alerts], "По фильтру ничего не найдено."),
         )
-        return page("Alerts", body)
+        return page("Алерты", body)
 
     def _alert_action(self, alert_id: str, action: str, query: dict[str, list[str]]) -> str:
         if action == "acknowledge":
@@ -498,10 +606,10 @@ class OperatorDashboardApp:
         else:
             raise ValueError(f"Unknown alert action: {action}")
         return_to = self._query_value(query, "return_to", "/alerts") or "/alerts"
-        flash = f"Alert {alert.alert_id} moved to {alert.state.value}."
+        flash = f"Алерт {alert.alert_id} переведен в состояние «{self._display_value(alert.state.value)}»."
         body = panel(
             alert.alert_id,
-            kv_table(
+            self._kv(
                 [
                     ("alert_type", alert.alert_type.value),
                     ("state", alert.state.value),
@@ -509,12 +617,12 @@ class OperatorDashboardApp:
                     ("summary", alert.summary),
                 ]
             )
-            + link_row([("back to list", return_to), ("entity detail", self._entity_href(alert.entity_type.value, alert.entity_id))]),
+            + link_row([("назад к списку", return_to), ("карточка сущности", self._entity_href(alert.entity_type.value, alert.entity_id))]),
         )
         return shell_page(
-            "Alert Updated",
-            "Alert Updated",
-            "Alert lifecycle transition applied through the notification service.",
+            "Алерт обновлен",
+            "Алерт обновлен",
+            "Переход состояния алерта выполнен через notification service.",
             body,
             flash=flash,
         )
@@ -522,43 +630,43 @@ class OperatorDashboardApp:
     def _research_index(self, query: dict[str, list[str]]) -> str:
         proposal = self.services.proposal_service.latest_approved_proposal()
         market_id = self._query_value(query, "market_id")
-        body = hero("Research Snapshots", "Latest probability and research views stay read-only in the UI.")
+        body = hero("Снимки исследования", "Последние probability и research views остаются read-only в интерфейсе.")
         body += panel(
-            "Latest Proposal Research",
-            '<div class="empty">No approved proposal research available.</div>'
+            "Последнее исследование по предложению",
+            '<div class="empty">Нет исследования для одобренного предложения.</div>'
             if proposal is None
-            else kv_table([("proposal_id", proposal.proposal_id), ("market_id", proposal.market_id), ("market_title", proposal.market_title)])
+            else self._kv([("proposal_id", proposal.proposal_id), ("market_id", proposal.market_id), ("market_title", proposal.market_title)])
             + link_row(
                 [
-                    ("proposal snapshot", f"/research/proposals/{proposal.proposal_id}"),
-                    ("integrated decision review", f"/decision-reviews/proposals/{proposal.proposal_id}"),
-                    ("decision review export", f"/exports/decision-reviews/proposals/{proposal.proposal_id}"),
+                    ("снимок предложения", f"/research/proposals/{proposal.proposal_id}"),
+                    ("интегрированный разбор решения", f"/decision-reviews/proposals/{proposal.proposal_id}"),
+                    ("экспорт разбора решения", f"/exports/decision-reviews/proposals/{proposal.proposal_id}"),
                 ]
             ),
         )
         body += panel(
-            "Market Lookup",
-            kv_table([("market_id", market_id or "-")])
+            "Поиск по рынку",
+            self._kv([("market_id", market_id or "-")])
             + (
-                '<div class="empty">Provide ?market_id=... to jump to a market snapshot.</div>'
+                '<div class="empty">Передайте ?market_id=..., чтобы открыть снимок рынка.</div>'
                 if market_id is None
                 else link_row(
                     [
-                        ("market snapshot", f"/research/markets/{market_id}"),
-                        ("market decision review", f"/decision-reviews/markets/{market_id}"),
+                        ("снимок рынка", f"/research/markets/{market_id}"),
+                        ("разбор решения по рынку", f"/decision-reviews/markets/{market_id}"),
                     ]
                 )
             ),
         )
-        return page("Research", body)
+        return page("Исследование", body)
 
     def _proposal_snapshot_detail(self, proposal_id: str) -> str:
         snapshot = self.services.proposal_service.latest_probability_snapshot_for_proposal(proposal_id)
         drift = self.services.proposal_service.compare_probability_snapshots_for_proposal(proposal_id)
-        body = hero("Proposal Snapshot", "Probability and research snapshot detail.")
+        body = hero("Снимок предложения", "Детальная probability и research snapshot view.")
         body += panel(
-            f"Snapshot {snapshot.snapshot_id}",
-            kv_table(
+            f"Снимок {snapshot.snapshot_id}",
+            self._kv(
                 [
                     ("proposal_id", snapshot.proposal_id or "-"),
                     ("market_id", snapshot.market_id),
@@ -569,81 +677,81 @@ class OperatorDashboardApp:
                     ("created_at", snapshot.created_at.isoformat()),
                 ]
             )
-            + chips(snapshot.probability.key_factors, empty_message="no key factors"),
+            + chips(snapshot.probability.key_factors, empty_message="нет ключевых факторов"),
         )
         body += panel(
-            "Research Summary",
-            kv_table(
+            "Сводка исследования",
+            self._kv(
                 [
                     ("summary", snapshot.research_summary.summary),
                     ("source_count", snapshot.research_summary.source_count),
                     ("data_age_seconds", snapshot.data_age_seconds),
-                    ("drift_summary", drift.drift_summary or "insufficient history"),
+                    ("drift_summary", drift.drift_summary or "недостаточно истории"),
                 ]
             )
-            + chips(snapshot.research_summary.evidence_summary, empty_message="no evidence summary"),
+            + chips(snapshot.research_summary.evidence_summary, empty_message="нет сводки по evidence"),
         )
         body += panel(
-            "Evidence and Drift",
+            "Источники и дрейф",
             chips(
                 [f"{record.source_name}:{record.source_type.value}:{record.weight:.2f}" for record in snapshot.probability.evidence_records],
-                empty_message="no evidence records",
+                empty_message="нет evidence records",
             )
             + chips(
                 [f"{key}={value:+.4f}" for key, value in sorted(drift.source_type_contribution_deltas.items())],
-                empty_message="no source contribution deltas",
+                empty_message="нет изменений contribution по source type",
             ),
         )
-        return page("Proposal Snapshot", body)
+        return page("Снимок предложения", body)
 
     def _market_snapshot_detail(self, market_id: str) -> str:
         snapshot = self.services.proposal_service.latest_probability_snapshot_for_market(market_id)
         drift = self.services.proposal_service.compare_probability_snapshots_for_market(market_id)
-        body = hero("Market Snapshot", "Latest market-level probability and research snapshot.")
+        body = hero("Снимок рынка", "Последний probability/research snapshot на уровне рынка.")
         body += panel(
-            f"Market {snapshot.market_id}",
-            kv_table(
+            f"Рынок {snapshot.market_id}",
+            self._kv(
                 [
                     ("proposal_id", snapshot.proposal_id or "-"),
                     ("fair_probability", f"{snapshot.probability.fair_probability:.4f}"),
                     ("confidence", f"{snapshot.probability.confidence:.2f}"),
                     ("research_summary", snapshot.research_summary.summary),
-                    ("drift_summary", drift.drift_summary or "insufficient history"),
+                    ("drift_summary", drift.drift_summary or "недостаточно истории"),
                     ("created_at", snapshot.created_at.isoformat()),
                 ]
             )
-            + chips(snapshot.research_summary.evidence_summary, empty_message="no evidence summary"),
+            + chips(snapshot.research_summary.evidence_summary, empty_message="нет сводки по evidence"),
         )
-        return page("Market Snapshot", body)
+        return page("Снимок рынка", body)
 
     def _decision_review_index(self, query: dict[str, list[str]]) -> str:
         proposal = self.services.proposal_service.latest_approved_proposal()
         market_id = self._query_value(query, "market_id")
         reviews = self.services.decision_review_service.list_recent(limit=10)
-        body = hero("Decision Reviews", "Integrated post-hoc context built from persisted services.")
+        body = hero("Разборы решений", "Интегрированный post-hoc context, собранный из сохраненных сервисов.")
         body += panel(
-            "Latest Review Lookup",
-            '<div class="empty">No approved proposal decision review available.</div>'
+            "Поиск последнего разбора",
+            '<div class="empty">Для одобренного предложения нет разбора решения.</div>'
             if proposal is None
-            else kv_table([("proposal_id", proposal.proposal_id), ("market_id", proposal.market_id)])
+            else self._kv([("proposal_id", proposal.proposal_id), ("market_id", proposal.market_id)])
             + link_row(
                 [
-                    ("latest approved review", "/decision-reviews/proposals/latest-approved"),
-                    ("proposal review", f"/decision-reviews/proposals/{proposal.proposal_id}"),
+                    ("последний разбор по одобренному", "/decision-reviews/proposals/latest-approved"),
+                    ("разбор предложения", f"/decision-reviews/proposals/{proposal.proposal_id}"),
                 ]
             ),
         )
         body += panel(
-            "Market Review Lookup",
-            kv_table([("market_id", market_id or "-")])
+            "Поиск разбора по рынку",
+            self._kv([("market_id", market_id or "-")])
             + (
-                '<div class="empty">Provide ?market_id=... to open a market decision review.</div>'
+                '<div class="empty">Передайте ?market_id=..., чтобы открыть разбор решения по рынку.</div>'
                 if market_id is None
-                else link_row([("market review", f"/decision-reviews/markets/{market_id}")])
+                else link_row([("разбор по рынку", f"/decision-reviews/markets/{market_id}")])
             ),
         )
         body += panel(
-            "Recent Decision Reviews",
+            "Недавние разборы решений",
             list_items(
                 [
                     self._status_item(
@@ -654,17 +762,17 @@ class OperatorDashboardApp:
                     )
                     for review in reviews
                 ],
-                "No persisted decision reviews.",
+                "Нет сохраненных разборов решений.",
             ),
         )
-        return page("Decision Reviews", body)
+        return page("Разборы решений", body)
 
     def _latest_proposal_decision_review(self) -> str:
         proposal = self.services.proposal_service.latest_approved_proposal()
-        body = hero("Latest Proposal Decision Review", "Latest approved proposal review lookup.")
+        body = hero("Последний разбор по предложению", "Быстрый переход к разбору последнего одобренного предложения.")
         if proposal is None:
-            body += panel("Latest Review", '<div class="empty">No approved proposal.</div>')
-            return page("Latest Proposal Decision Review", body)
+            body += panel("Последний разбор", '<div class="empty">Нет одобренного предложения.</div>')
+            return page("Последний разбор по предложению", body)
         return self._proposal_decision_review(proposal.proposal_id)
 
     def _proposal_decision_review(self, proposal_id: str) -> str:
@@ -679,8 +787,8 @@ class OperatorDashboardApp:
             self.services.execution_evaluation_service.evaluate_proposal(proposal_id)
             evaluation = self.services.execution_evaluation_service.latest_persisted_for_proposal(proposal_id)
         return page(
-            "Decision Review",
-            hero("Decision Review", "Integrated operator review of proposal, research, drift, intent, execution, and evaluation.")
+            "Разбор решения",
+            hero("Разбор решения", "Интегрированный разбор предложения, исследования, дрейфа, намерения, исполнения и оценки.")
             + self._integrated_review_panels(snapshot, evaluation),
         )
 
@@ -695,8 +803,8 @@ class OperatorDashboardApp:
         if snapshot.proposal_id is not None:
             evaluation = self.services.execution_evaluation_service.latest_persisted_for_proposal(snapshot.proposal_id)
         return page(
-            "Market Decision Review",
-            hero("Market Decision Review", "Integrated market-level operator review.")
+            "Разбор решения по рынку",
+            hero("Разбор решения по рынку", "Интегрированный разбор на уровне рынка.")
             + self._integrated_review_panels(snapshot, evaluation),
         )
 
@@ -711,10 +819,10 @@ class OperatorDashboardApp:
                 snapshot = self._build_analysis(scope, group_by, since_hours)
         else:
             snapshot = self._build_analysis(scope, group_by, since_hours)
-        body = hero("Outcome Analysis", "Grouped operator analysis using persisted reviews and evaluations.")
+        body = hero("Анализ итогов", "Групповой операторский анализ на основе сохраненных разборов и оценок.")
         body += panel(
-            "Analysis Summary",
-            kv_table(
+            "Сводка анализа",
+            self._kv(
                 [
                     ("scope", snapshot.scope),
                     ("group_by", snapshot.group_by),
@@ -724,13 +832,13 @@ class OperatorDashboardApp:
             )
             + link_row(
                 [
-                    ("saved views", "/views"),
-                    ("export analysis", f"/exports/outcome-analysis?scope={snapshot.scope}&group_by={snapshot.group_by}"),
+                    ("сохраненные виды", "/views"),
+                    ("экспорт анализа", f"/exports/outcome-analysis?scope={snapshot.scope}&group_by={snapshot.group_by}"),
                 ]
             ),
         )
         body += panel(
-            "Groups",
+            "Группы",
             list_items(
                 [
                     self._status_item(
@@ -738,54 +846,54 @@ class OperatorDashboardApp:
                         f"reviews={group.review_count} evaluations={group.evaluation_count}",
                         f"/analysis?scope={snapshot.scope}&group_by={snapshot.group_by}&latest=1",
                         (
-                            f"confidence_held={group.confidence_held_count} "
-                            f"confidence_degraded={group.confidence_degraded_count} "
-                            f"verdicts={group.verdict_counts}"
+                            f"уверенность сохранилась={group.confidence_held_count} "
+                            f"уверенность снизилась={group.confidence_degraded_count} "
+                            f"вердикты={self._localized_counts(group.verdict_counts)}"
                         ),
                         tone="good",
                     )
                     for group in snapshot.groups
                 ],
-                "No grouped analysis available.",
+                "Групповой анализ недоступен.",
             ),
         )
-        return page("Outcome Analysis", body)
+        return page("Анализ итогов", body)
 
     def _saved_view_list(self) -> str:
         views = self.services.saved_view_service.list_all()
         body = panel(
-            "Saved View List",
+            "Список сохраненных видов",
             list_items(
                 [
                     self._status_item(
                         saved.name,
                         saved.kind,
                         f"/views/{saved.name}",
-                        f"params={saved.params}",
+                        f"параметры={saved.params}",
                         tone="good",
                     )
                     + link_row(
                         [
-                            ("run", f"/views/{saved.name}/run"),
-                            ("clone", f"/views/{saved.name}/clone?name={saved.name}-copy"),
-                            ("edit", f"/views/{saved.name}/edit"),
+                            ("запустить", f"/views/{saved.name}/run"),
+                            ("клонировать", f"/views/{saved.name}/clone?name={saved.name}-copy"),
+                            ("редактировать", f"/views/{saved.name}/edit"),
                         ]
                     )
                     for saved in views
                 ],
-                "No saved views configured.",
+                "Сохраненных видов нет.",
             )
             + link_row(
                 [
-                    ("save current proposals filter", "/views/save-current?name=active-proposals-ui&kind=proposals_list&scope=active"),
-                    ("save current analysis filter", "/views/save-current?name=market-analysis-ui&kind=analysis_outcomes&group_by=market"),
+                    ("сохранить текущий фильтр предложений", "/views/save-current?name=active-proposals-ui&kind=proposals_list&scope=active"),
+                    ("сохранить текущий фильтр анализа", "/views/save-current?name=market-analysis-ui&kind=analysis_outcomes&group_by=market"),
                 ]
             ),
         )
         return shell_page(
-            "Saved Views",
-            "Saved Views",
-            "Reusable filters and analysis routes backed by the saved view service.",
+            "Сохраненные виды",
+            "Сохраненные виды",
+            "Переиспользуемые фильтры и маршруты анализа на базе saved view service.",
             body,
         )
 
@@ -795,20 +903,20 @@ class OperatorDashboardApp:
             raise ValueError(f"Unknown saved view: {name}")
         body = panel(
             saved.name,
-            kv_table([("kind", saved.kind), ("created_at", saved.created_at.isoformat()), ("params", saved.params)])
+            self._kv([("kind", saved.kind), ("created_at", saved.created_at.isoformat()), ("params", saved.params)])
             + link_row(
                 [
-                    ("run saved view", f"/views/{saved.name}/run"),
-                    ("clone", f"/views/{saved.name}/clone?name={saved.name}-copy"),
-                    ("edit", f"/views/{saved.name}/edit"),
-                    ("all saved views", "/views"),
+                    ("запустить вид", f"/views/{saved.name}/run"),
+                    ("клонировать", f"/views/{saved.name}/clone?name={saved.name}-copy"),
+                    ("редактировать", f"/views/{saved.name}/edit"),
+                    ("все сохраненные виды", "/views"),
                 ]
             ),
         )
         return shell_page(
-            f"Saved View {saved.name}",
-            "Saved View",
-            "Saved filter definition for list or analysis workflows.",
+            f"Сохраненный вид {saved.name}",
+            "Сохраненный вид",
+            "Сохраненное определение фильтра для списков и сценариев анализа.",
             body,
         )
 
@@ -835,15 +943,15 @@ class OperatorDashboardApp:
         new_name = self._query_value(query, "name", f"{name}-copy")
         cloned = self.services.saved_view_service.save(new_name, saved.kind, dict(saved.params))
         return shell_page(
-            "Saved View Cloned",
-            "Saved View Cloned",
-            "Saved view duplicated through the saved view service.",
+            "Сохраненный вид клонирован",
+            "Сохраненный вид клонирован",
+            "Вид продублирован через saved view service.",
             panel(
                 cloned.name,
-                kv_table([("kind", cloned.kind), ("params", cloned.params)])
-                + link_row([("open cloned view", f"/views/{cloned.name}"), ("run cloned view", f"/views/{cloned.name}/run")]),
+                self._kv([("kind", cloned.kind), ("params", cloned.params)])
+                + link_row([("открыть клон", f"/views/{cloned.name}"), ("запустить клон", f"/views/{cloned.name}/run")]),
             ),
-            flash=f"Saved view {name} cloned to {cloned.name}.",
+            flash=f"Сохраненный вид {name} клонирован в {cloned.name}.",
         )
 
     def _edit_saved_view(self, name: str, query: dict[str, list[str]]) -> str:
@@ -858,15 +966,15 @@ class OperatorDashboardApp:
         target_name = self._query_value(query, "name", name)
         updated = self.services.saved_view_service.save(target_name, saved.kind, merged)
         return shell_page(
-            "Saved View Updated",
-            "Saved View Updated",
-            "Saved view parameters updated through the saved view service.",
+            "Сохраненный вид обновлен",
+            "Сохраненный вид обновлен",
+            "Параметры вида обновлены через saved view service.",
             panel(
                 updated.name,
-                kv_table([("kind", updated.kind), ("params", updated.params)])
-                + link_row([("open view", f"/views/{updated.name}"), ("run view", f"/views/{updated.name}/run"), ("all views", "/views")]),
+                self._kv([("kind", updated.kind), ("params", updated.params)])
+                + link_row([("открыть вид", f"/views/{updated.name}"), ("запустить вид", f"/views/{updated.name}/run"), ("все виды", "/views")]),
             ),
-            flash=f"Saved view {name} updated.",
+            flash=f"Сохраненный вид {name} обновлен.",
         )
 
     def _save_current_filter(self, query: dict[str, list[str]]) -> str:
@@ -881,27 +989,27 @@ class OperatorDashboardApp:
             params[key] = self._coerce_query_value(values[-1])
         saved = self.services.saved_view_service.save(name, kind, params)
         return shell_page(
-            "Current Filter Saved",
-            "Current Filter Saved",
-            "Current UI filter saved through the saved view service.",
+            "Текущий фильтр сохранен",
+            "Текущий фильтр сохранен",
+            "Текущий UI-фильтр сохранен через saved view service.",
             panel(
                 saved.name,
-                kv_table([("kind", saved.kind), ("params", saved.params)])
-                + link_row([("open saved view", f"/views/{saved.name}"), ("run saved view", f"/views/{saved.name}/run")]),
+                self._kv([("kind", saved.kind), ("params", saved.params)])
+                + link_row([("открыть сохраненный вид", f"/views/{saved.name}"), ("запустить сохраненный вид", f"/views/{saved.name}/run")]),
             ),
-            flash=f"Saved current filter as {saved.name}.",
+            flash=f"Текущий фильтр сохранен как {saved.name}.",
         )
 
     def _export_decision_review(self, proposal_id: str) -> str:
         payload = self.services.reporting_service.export_decision_review(proposal_id)
         return shell_page(
-            "Decision Review Export",
-            "Decision Review Export",
-            "Thin export view backed by the reporting service.",
+            "Экспорт разбора решения",
+            "Экспорт разбора решения",
+            "Тонкий export view на базе reporting service.",
             panel(
-                "Payload",
+                "Данные",
                 json_block(json.dumps(payload, indent=2, sort_keys=True))
-                + link_row([("back to decision review", f"/decision-reviews/proposals/{proposal_id}")]),
+                + link_row([("назад к разбору", f"/decision-reviews/proposals/{proposal_id}")]),
             ),
         )
 
@@ -909,13 +1017,13 @@ class OperatorDashboardApp:
         payload = self.services.reporting_service.export_execution_evaluation(proposal_id=proposal_id, intent_id=intent_id)
         back_href = f"/decision-reviews/proposals/{proposal_id}" if proposal_id is not None else f"/intents/{intent_id}"
         return shell_page(
-            "Execution Evaluation Export",
-            "Execution Evaluation Export",
-            "Thin export view backed by the reporting service.",
+            "Экспорт оценки исполнения",
+            "Экспорт оценки исполнения",
+            "Тонкий export view на базе reporting service.",
             panel(
-                "Payload",
+                "Данные",
                 json_block(json.dumps(payload, indent=2, sort_keys=True))
-                + link_row([("back", back_href)]),
+                + link_row([("назад", back_href)]),
             ),
         )
 
@@ -925,13 +1033,13 @@ class OperatorDashboardApp:
         since_hours = self._query_int(query, "since_hours")
         payload = self.services.reporting_service.export_outcome_analysis(scope, group_by, since_hours)
         return shell_page(
-            "Outcome Analysis Export",
-            "Outcome Analysis Export",
-            "Thin export view backed by the reporting service.",
+            "Экспорт анализа итогов",
+            "Экспорт анализа итогов",
+            "Тонкий export view на базе reporting service.",
             panel(
-                "Payload",
+                "Данные",
                 json_block(json.dumps(payload, indent=2, sort_keys=True))
-                + link_row([("back to analysis", f"/analysis?scope={scope}&group_by={group_by}")]),
+                + link_row([("назад к анализу", f"/analysis?scope={scope}&group_by={group_by}")]),
             ),
         )
 
@@ -963,8 +1071,8 @@ class OperatorDashboardApp:
         outcomes = snapshot.payload.get("outcomes", {})
         body = '<div class="grid">'
         body += panel(
-            "Review Overview",
-            kv_table(
+            "Обзор разбора",
+            self._kv(
                 [
                     ("review_id", snapshot.review_id),
                     ("scope", snapshot.scope),
@@ -975,22 +1083,22 @@ class OperatorDashboardApp:
             )
             + chips(
                 [
-                    f"confidence={outcomes.get('confidence', '-')}",
-                    f"probability={outcomes.get('probability', '-')}",
-                    f"execution={outcomes.get('execution', '-')}",
+                    f"уверенность={self._display_value(outcomes.get('confidence', '-'))}",
+                    f"вероятность={self._display_value(outcomes.get('probability', '-'))}",
+                    f"исполнение={self._display_value(outcomes.get('execution', '-'))}",
                 ]
             )
             + link_row(
                 []
                 if snapshot.proposal_id is None
-                else [("export decision review", f"/exports/decision-reviews/proposals/{snapshot.proposal_id}")]
+                else [("экспорт разбора решения", f"/exports/decision-reviews/proposals/{snapshot.proposal_id}")]
             ),
         )
         body += panel(
-            "Proposal",
-            '<div class="empty">No proposal linked.</div>'
+            "Предложение",
+            '<div class="empty">Предложение не привязано.</div>'
             if proposal is None
-            else kv_table(
+            else self._kv(
                 [
                     ("proposal_id", proposal.get("proposal_id", "-")),
                     ("status", proposal.get("status", "-")),
@@ -1002,8 +1110,8 @@ class OperatorDashboardApp:
             ),
         )
         body += panel(
-            "Probability Snapshot",
-            kv_table(
+            "Снимок вероятности",
+            self._kv(
                 [
                     ("snapshot_id", probability_snapshot.get("snapshot_id", "-")),
                     ("fair_probability", probability_snapshot.get("fair_probability", "-")),
@@ -1012,11 +1120,11 @@ class OperatorDashboardApp:
                     ("created_at", probability_snapshot.get("created_at", "-")),
                 ]
             )
-            + chips(probability_snapshot.get("key_factors", []), empty_message="no key factors"),
+            + chips(probability_snapshot.get("key_factors", []), empty_message="нет ключевых факторов"),
         )
         body += panel(
-            "Probability Drift",
-            kv_table(
+            "Дрейф вероятности",
+            self._kv(
                 [
                     ("previous_snapshot_id", probability_drift.get("previous_snapshot_id", "-")),
                     ("fair_probability_delta", probability_drift.get("fair_probability_delta", "-")),
@@ -1025,15 +1133,15 @@ class OperatorDashboardApp:
                     ("drift_summary", probability_drift.get("drift_summary", "-")),
                 ]
             )
-            + chips(probability_drift.get("added_key_factors", []), empty_message="no added factors")
-            + chips(probability_drift.get("removed_key_factors", []), empty_message="no removed factors"),
+            + chips(probability_drift.get("added_key_factors", []), empty_message="нет добавленных факторов")
+            + chips(probability_drift.get("removed_key_factors", []), empty_message="нет удаленных факторов"),
         )
         body += panel(
-            "Intent and Execution",
+            "Намерение и исполнение",
             (
-                '<div class="empty">No linked intent.</div>'
+                '<div class="empty">Связанное намерение отсутствует.</div>'
                 if intent is None
-                else kv_table(
+                else self._kv(
                     [
                         ("intent_id", intent.get("intent_id", "-")),
                         ("status", intent.get("status", "-")),
@@ -1044,9 +1152,9 @@ class OperatorDashboardApp:
                 )
             )
             + (
-                '<div class="empty">No simulated execution.</div>'
+                '<div class="empty">Смоделированного исполнения нет.</div>'
                 if execution is None
-                else kv_table(
+                else self._kv(
                     [
                         ("execution_id", execution.get("execution_id", "-")),
                         ("status", execution.get("status", "-")),
@@ -1060,10 +1168,10 @@ class OperatorDashboardApp:
             ),
         )
         body += panel(
-            "Execution Evaluation",
-            '<div class="empty">No execution evaluation snapshot.</div>'
+            "Оценка исполнения",
+            '<div class="empty">Нет снимка оценки исполнения.</div>'
             if evaluation is None
-            else kv_table(
+            else self._kv(
                 [
                     ("verdict", evaluation.verdict),
                     ("summary", evaluation.summary),
@@ -1078,7 +1186,7 @@ class OperatorDashboardApp:
                 if snapshot.intent_id is None and snapshot.proposal_id is None
                 else [
                     (
-                        "export evaluation",
+                        "экспорт оценки",
                         f"/exports/execution-evaluations/proposals/{snapshot.proposal_id}"
                         if snapshot.proposal_id is not None
                         else f"/exports/execution-evaluations/intents/{snapshot.intent_id}",
@@ -1095,7 +1203,11 @@ class OperatorDashboardApp:
             alert.summary,
             alert.state.value,
             self._entity_href(alert.entity_type.value, alert.entity_id),
-            f"{alert.alert_type.value} | severity={alert.severity.value} | entity={alert.entity_type.value}:{alert.entity_id}",
+            (
+                f"{self._display_value(alert.alert_type.value)} | "
+                f"серьезность={self._display_value(alert.severity.value)} | "
+                f"сущность={self._display_value(alert.entity_type.value)}:{alert.entity_id}"
+            ),
             tone=self._alert_tone(alert.state.value),
         )
         if not include_actions:
@@ -1104,22 +1216,23 @@ class OperatorDashboardApp:
         if alert.state == AlertState.OPEN:
             actions.extend(
                 [
-                    ("acknowledge", f"/alerts/{alert.alert_id}/acknowledge?return_to={return_to}"),
-                    ("dismiss", f"/alerts/{alert.alert_id}/dismiss?return_to={return_to}"),
-                    ("resolve", f"/alerts/{alert.alert_id}/resolve?return_to={return_to}"),
+                    ("подтвердить", f"/alerts/{alert.alert_id}/acknowledge?return_to={return_to}"),
+                    ("скрыть", f"/alerts/{alert.alert_id}/dismiss?return_to={return_to}"),
+                    ("решить", f"/alerts/{alert.alert_id}/resolve?return_to={return_to}"),
                 ]
             )
         elif alert.state == AlertState.ACKNOWLEDGED:
             actions.extend(
                 [
-                    ("dismiss", f"/alerts/{alert.alert_id}/dismiss?return_to={return_to}"),
-                    ("resolve", f"/alerts/{alert.alert_id}/resolve?return_to={return_to}"),
+                    ("скрыть", f"/alerts/{alert.alert_id}/dismiss?return_to={return_to}"),
+                    ("решить", f"/alerts/{alert.alert_id}/resolve?return_to={return_to}"),
                 ]
             )
         return content + link_row(actions)
 
     def _status_item(self, title: str, status: str, href: str, meta: str, tone: str = "warn") -> str:
-        return f"{badge(status, tone)} {item_link(title, status, href, meta=meta)}"
+        display_status = self._display_value(status)
+        return f"{badge(display_status, tone)} {item_link(title, display_status, href, meta=meta)}"
 
     def _review_href(self, review: DecisionReviewSnapshot) -> str:
         if review.scope == "proposal" and review.proposal_id is not None:
@@ -1170,3 +1283,16 @@ class OperatorDashboardApp:
             return float(value) if "." in value else value
         except ValueError:
             return value
+
+    def _kv(self, rows: list[tuple[str, object]]) -> str:
+        return kv_table([(self.FIELD_LABELS.get(key, key), self._display_value(value)) for key, value in rows])
+
+    def _display_value(self, value: object) -> object:
+        if isinstance(value, bool):
+            return "да" if value else "нет"
+        if isinstance(value, str):
+            return self.VALUE_LABELS.get(value, value)
+        return value
+
+    def _localized_counts(self, counts: dict[str, int]) -> dict[str, int]:
+        return {str(self._display_value(key)): value for key, value in counts.items()}

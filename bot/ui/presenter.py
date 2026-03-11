@@ -5,7 +5,7 @@ from html import escape
 
 def page(title: str, body: str) -> str:
     return f"""<!doctype html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -114,14 +114,14 @@ def hero(title: str, subtitle: str) -> str:
       <h1>{escape(title)}</h1>
       <div class="meta">{escape(subtitle)}</div>
       <nav class="nav">
-        <a href="/">Home</a>
-        <a href="/proposals">Proposals</a>
-        <a href="/intents">Intents</a>
-        <a href="/alerts">Alerts</a>
-        <a href="/research">Research</a>
-        <a href="/decision-reviews">Decision Reviews</a>
-        <a href="/analysis">Outcome Analysis</a>
-        <a href="/views">Saved Views</a>
+        <a href="/">Главная</a>
+        <a href="/proposals">Предложения</a>
+        <a href="/intents">Намерения</a>
+        <a href="/alerts">Алерты</a>
+        <a href="/research">Исследование</a>
+        <a href="/decision-reviews">Разбор решений</a>
+        <a href="/analysis">Анализ итогов</a>
+        <a href="/views">Сохраненные виды</a>
       </nav>
     </section>
     """
@@ -132,7 +132,7 @@ def panel(title: str, body: str, meta: str | None = None) -> str:
     return f'<section class="panel"><h2>{escape(title)}</h2>{extra}{body}</section>'
 
 
-def list_items(items: list[str], empty_message: str = "No items.") -> str:
+def list_items(items: list[str], empty_message: str = "Нет данных.") -> str:
     if not items:
         return f'<div class="empty">{escape(empty_message)}</div>'
     return '<div class="list">' + "".join(f'<div class="item">{item}</div>' for item in items) + "</div>"
@@ -179,7 +179,8 @@ def summary_cards(cards: list[tuple[str, object, str]]) -> str:
 
 
 def flash_message(message: str, tone: str = "warn") -> str:
-    return f'<section class="flash">{badge(tone, tone)} <strong>{escape(message)}</strong></section>'
+    tone_label = {"good": "успех", "warn": "внимание", "bad": "ошибка"}.get(tone, tone)
+    return f'<section class="flash">{badge(tone_label, tone)} <strong>{escape(message)}</strong></section>'
 
 
 def shell_page(title: str, heading: str, subtitle: str, body: str, flash: str | None = None) -> str:

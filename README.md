@@ -40,13 +40,13 @@ cp .env.example .env
 Validate config:
 
 ```bash
-.venv/bin/python -m bot.cli.app config validate
+.venv/bin/bot config validate
 ```
 
-Or, after editable install:
+Module entrypoint also works:
 
 ```bash
-bot config validate
+.venv/bin/python -m bot.cli.app config validate
 ```
 
 Use an isolated local database for smoke/demo runs:
@@ -73,7 +73,7 @@ bot portfolio summary
 Seed local demo data for operator testing:
 
 ```bash
-bot demo seed
+.venv/bin/bot demo seed
 ```
 
 This populates the local `bot.db` with:
@@ -90,7 +90,7 @@ This populates the local `bot.db` with:
 Start the operator dashboard:
 
 ```bash
-bot ui serve --host 127.0.0.1 --port 8080
+.venv/bin/bot ui serve --host 127.0.0.1 --port 8080
 ```
 
 Then open:
@@ -121,29 +121,29 @@ Available UI areas:
 1. Seed demo data:
 
 ```bash
-bot demo seed
+.venv/bin/bot demo seed
 ```
 
 2. Inspect operator state from the CLI:
 
 ```bash
-bot alerts list --state open
-bot proposals list --scope approved
-bot intents list --scope terminal
+.venv/bin/bot alerts list --state open
+.venv/bin/bot proposals list --scope approved
+.venv/bin/bot intents list --scope terminal
 ```
 
 3. Start the UI:
 
 ```bash
-bot ui serve
+.venv/bin/bot ui serve
 ```
 
-If the `bot` script is not yet on your path, use:
+Module entrypoint works as well:
 
 ```bash
 .venv/bin/python -m bot.cli.app demo seed
 .venv/bin/python -m bot.cli.app proposals list --scope approved
-.venv/bin/python -m bot.cli.app ui serve
+.venv/bin/python -m bot.cli.app ui serve --host 127.0.0.1 --port 8080
 ```
 
 4. In the UI:

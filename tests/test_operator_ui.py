@@ -82,15 +82,15 @@ class OperatorUiTest(unittest.TestCase):
             try:
                 status, home = app.render_response("/")
                 self.assertEqual(status, "200 OK")
-                self.assertIn("Operator Dashboard", home)
+                self.assertIn("Панель оператора", home)
                 self.assertIn(approved_id, home)
                 self.assertIn(intent_id, home)
-                self.assertIn("open alerts", home)
-                self.assertIn("Latest Decision Reviews", home)
-                self.assertIn("Latest Outcome Analysis", home)
-                self.assertIn("Latest Evaluations", home)
-                self.assertIn("Latest Simulation", home)
-                self.assertIn("Recent Alerts", home)
+                self.assertIn("открытые алерты", home)
+                self.assertIn("Последние разборы решений", home)
+                self.assertIn("Последний анализ итогов", home)
+                self.assertIn("Последние оценки исполнения", home)
+                self.assertIn("Последняя симуляция", home)
+                self.assertIn("Недавние алерты", home)
 
                 _, proposals = app.render_response("/proposals", f"scope=approved&market_id={self.market.market_id}")
                 self.assertIn(approved_id, proposals)
@@ -100,26 +100,26 @@ class OperatorUiTest(unittest.TestCase):
                 _, proposal_detail = app.render_response(f"/proposals/{approved_id}")
                 self.assertIn(f"/research/proposals/{approved_id}", proposal_detail)
                 self.assertIn(f"/decision-reviews/proposals/{approved_id}", proposal_detail)
-                self.assertIn("Thin detail view", proposal_detail)
+                self.assertIn("Тонкая карточка", proposal_detail)
 
                 _, intents = app.render_response("/intents", f"scope=terminal&proposal_id={approved_id}")
                 self.assertIn(intent_id, intents)
                 self.assertIn("/intents/latest-terminal", intents)
 
                 _, alerts = app.render_response("/alerts", "state=open&watchlist_only=1")
-                self.assertIn("proposal_ttl_nearing", alerts)
-                self.assertIn("returned", alerts)
+                self.assertIn("предложение близко к TTL", alerts)
+                self.assertIn("Возвращено", alerts)
                 self.assertIn(f"/alerts/{alert_id}/acknowledge", alerts)
 
                 _, alert_updated = app.render_response(f"/alerts/{alert_id}/acknowledge", "return_to=/alerts?state=open")
-                self.assertIn("Alert Updated", alert_updated)
-                self.assertIn("acknowledged", alert_updated)
-                self.assertIn("moved to acknowledged", alert_updated)
+                self.assertIn("Алерт обновлен", alert_updated)
+                self.assertIn("подтвержден", alert_updated)
+                self.assertIn("переведен в состояние", alert_updated)
                 self.assertIn("/alerts?state=open", alert_updated)
 
                 _, research = app.render_response(f"/research/proposals/{approved_id}")
-                self.assertIn("Proposal Snapshot", research)
-                self.assertIn("drift_summary", research)
+                self.assertIn("Снимок предложения", research)
+                self.assertIn("Сводка дрейфа", research)
                 self.assertIn("policy drift", research)
             finally:
                 connection.close()
@@ -129,19 +129,19 @@ class OperatorUiTest(unittest.TestCase):
             connection, app, approved_id, _, intent_id, _ = self._build_fixture(tmp_dir)
             try:
                 _, review = app.render_response(f"/decision-reviews/proposals/{approved_id}")
-                self.assertIn("Decision Review", review)
-                self.assertIn("confidence_", review)
-                self.assertIn("probability_", review)
-                self.assertIn("Execution Evaluation", review)
-                self.assertIn("verdict", review)
+                self.assertIn("Разбор решения", review)
+                self.assertIn("уверенность=", review)
+                self.assertIn("вероятность=", review)
+                self.assertIn("Оценка исполнения", review)
+                self.assertIn("Вердикт", review)
 
                 _, latest_review = app.render_response("/decision-reviews/proposals/latest-approved")
                 self.assertIn(approved_id, latest_review)
 
                 _, analysis = app.render_response("/analysis", "scope=outcomes&group_by=market&latest=1")
-                self.assertIn("Outcome Analysis", analysis)
+                self.assertIn("Анализ итогов", analysis)
                 self.assertIn(self.market.market_id, analysis)
-                self.assertIn("confidence_held", analysis)
+                self.assertIn("уверенность сохранилась", analysis)
 
                 _, latest_terminal = app.render_response("/intents/latest-terminal")
                 self.assertIn(intent_id, latest_terminal)
@@ -151,32 +151,32 @@ class OperatorUiTest(unittest.TestCase):
                 self.assertIn(f"/decision-reviews/markets/{self.market.market_id}", research_index)
 
                 _, views = app.render_response("/views")
-                self.assertIn("Saved Views", views)
+                self.assertIn("Сохраненные виды", views)
                 self.assertIn("approved-proposals", views)
-                self.assertIn("save current proposals filter", views)
+                self.assertIn("сохранить текущий фильтр предложений", views)
 
                 _, saved_view = app.render_response("/views/approved-proposals")
-                self.assertIn("run saved view", saved_view)
-                self.assertIn("clone", saved_view)
-                self.assertIn("edit", saved_view)
+                self.assertIn("запустить вид", saved_view)
+                self.assertIn("клонировать", saved_view)
+                self.assertIn("редактировать", saved_view)
 
                 _, saved_view_run = app.render_response("/views/approved-proposals/run")
-                self.assertIn("Proposal List", saved_view_run)
+                self.assertIn("Список предложений", saved_view_run)
                 self.assertIn(approved_id, saved_view_run)
 
                 _, cloned_view = app.render_response("/views/approved-proposals/clone", "name=approved-proposals-copy")
-                self.assertIn("Saved View Cloned", cloned_view)
+                self.assertIn("Сохраненный вид клонирован", cloned_view)
                 self.assertIn("approved-proposals-copy", cloned_view)
 
                 _, edited_view = app.render_response("/views/approved-proposals/edit", "scope=all&name=approved-proposals")
-                self.assertIn("Saved View Updated", edited_view)
-                self.assertIn("scope", edited_view)
+                self.assertIn("Сохраненный вид обновлен", edited_view)
+                self.assertIn("Параметры", edited_view)
 
                 _, current_saved = app.render_response(
                     "/views/save-current",
                     "name=alert-open-ui&kind=alerts_list&state=open&watchlist_only=true",
                 )
-                self.assertIn("Current Filter Saved", current_saved)
+                self.assertIn("Текущий фильтр сохранен", current_saved)
                 self.assertIn("alert-open-ui", current_saved)
             finally:
                 connection.close()

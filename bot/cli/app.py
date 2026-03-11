@@ -709,3 +709,7 @@ def main(argv: list[str] | None = None) -> int:
         client.close()
     print(f"command={args.command} mode={settings.mode.value}")
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
