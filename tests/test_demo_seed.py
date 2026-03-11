@@ -81,15 +81,15 @@ class DemoSeedTest(unittest.TestCase):
                         )
                     )
                     _, decision_export = app.render_response(f"/exports/decision-reviews/proposals/{proposal_id}")
-                    self.assertIn("Decision Review Export", decision_export)
+                    self.assertIn("Экспорт разбора решения", decision_export)
                     self.assertIn(proposal_id, decision_export)
 
                     _, evaluation_export = app.render_response(f"/exports/execution-evaluations/intents/{intent_id}")
-                    self.assertIn("Execution Evaluation Export", evaluation_export)
+                    self.assertIn("Экспорт оценки исполнения", evaluation_export)
                     self.assertIn(intent_id, evaluation_export)
 
                     _, analysis_export = app.render_response("/exports/outcome-analysis", "scope=outcomes&group_by=market")
-                    self.assertIn("Outcome Analysis Export", analysis_export)
+                    self.assertIn("Экспорт анализа итогов", analysis_export)
                     self.assertIn("&quot;scope&quot;: &quot;outcomes&quot;", analysis_export)
                 finally:
                     connection.close()

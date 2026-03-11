@@ -156,6 +156,22 @@ CREATE TABLE IF NOT EXISTS probability_snapshots (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS market_data_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    market_id TEXT NOT NULL,
+    asset_id TEXT NOT NULL,
+    source TEXT NOT NULL,
+    market_payload_json TEXT NOT NULL,
+    orderbook_payload_json TEXT NOT NULL,
+    websocket_payload_json TEXT NOT NULL,
+    last_trade_price REAL,
+    data_age_seconds INTEGER NOT NULL,
+    fetched_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_market_data_snapshots_market_fetched
+ON market_data_snapshots(market_id, fetched_at DESC);
+
 CREATE TABLE IF NOT EXISTS decision_reviews (
     review_id TEXT PRIMARY KEY,
     scope TEXT NOT NULL,

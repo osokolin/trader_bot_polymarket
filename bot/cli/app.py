@@ -5,8 +5,8 @@ import json
 import os
 from pathlib import Path
 
-from bot.adapters.polymarket.client import PolymarketClient, PolymarketMarketMetadataAdapter
-from bot.adapters.polymarket.market_stream import PolymarketOrderBookAdapter
+from bot.adapters.polymarket.client import ClobMarketDataClient, GammaApiClient, PolymarketClient, PolymarketMarketMetadataAdapter
+from bot.adapters.polymarket.market_stream import PolymarketOrderBookAdapter, PublicMarketWebSocketClient
 from bot.adapters.polymarket.trading import SemiAutoExecutionAdapter
 from bot.cli.presenter import (
     analytics_summary_lines,
@@ -22,6 +22,7 @@ from bot.cli.presenter import (
     intent_detail_lines,
     intent_summary_line,
     latest_lookup_lines,
+    market_data_lines,
     latest_execution_lines,
     list_header_lines,
     proposal_detail_lines,
@@ -44,7 +45,7 @@ from bot.services.audit_log import AuditLogService
 from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService
-from bot.services.market_data import PolymarketApprovalSnapshotProvider
+from bot.services.market_data import LiveMarketDataService, PolymarketApprovalSnapshotProvider
 from bot.services.outcome_analysis import OutcomeAnalysisService
 from bot.services.operator_notifications import OperatorNotificationsService
 from bot.services.probability_engine import EdgeAdjustedProbabilityProvider
@@ -59,6 +60,7 @@ from bot.storage.repositories import (
     DecisionReviewRepository,
     ExecutionEvaluationRepository,
     OutcomeAnalysisRepository,
+    MarketDataSnapshotRepository,
     OrderIntentRepository,
     ProbabilitySnapshotRepository,
     PositionRepository,
@@ -232,6 +234,12 @@ def build_parser() -> argparse.ArgumentParser:
     market_decision_review.add_argument("id")
     market_research = markets_sub.add_parser("research")
     market_research.add_argument("id")
+    market_live = markets_sub.add_parser("live")
+    market_live.add_argument("id")
+    market_cache = markets_sub.add_parser("cache")
+    market_cache.add_argument("id")
+    market_stream = markets_sub.add_parser("stream-once")
+    market_stream.add_argument("id")
 
     analysis = subparsers.add_parser("analysis")
     analysis_sub = analysis.add_subparsers(dest="analysis_command")
@@ -321,15 +329,21 @@ def main(argv: list[str] | None = None) -> int:
     database = Database(_resolve_database_path())
     database.initialize()
     client = PolymarketClient()
+    gamma_client = GammaApiClient()
     connection = database.connect()
     try:
         try:
+            market_data_service = LiveMarketDataService(
+                PolymarketMarketMetadataAdapter(gamma_client),
+                PolymarketOrderBookAdapter(ClobMarketDataClient(http_client=client.http_client)),
+                MarketDataSnapshotRepository(connection),
+                websocket_client=PublicMarketWebSocketClient(),
+            )
             proposal_service = ProposalLifecycleService(
                 ProposalRepository(connection),
                 AuditLogService(AuditRepository(connection)),
                 snapshot_provider=PolymarketApprovalSnapshotProvider(
-                    PolymarketMarketMetadataAdapter(client),
-                    PolymarketOrderBookAdapter(client),
+                    market_data_service,
                     EdgeAdjustedProbabilityProvider(),
                 ),
                 probability_snapshot_repository=ProbabilitySnapshotRepository(connection),
@@ -385,6 +399,7 @@ def main(argv: list[str] | None = None) -> int:
                             outcome_analysis_service=outcome_analysis_service,
                             saved_view_service=saved_view_service,
                             reporting_service=reporting_service,
+                            market_data_service=market_data_service,
                         )
                     ),
                     args.host,
@@ -630,6 +645,19 @@ def main(argv: list[str] | None = None) -> int:
             if args.command == "markets" and args.markets_command == "research":
                 _print_lines(research_summary_lines(proposal_service.latest_probability_snapshot_for_market(args.id)))
                 return 0
+            if args.command == "markets" and args.markets_command == "live":
+                _print_lines(market_data_lines(market_data_service.fetch_live_snapshot(args.id)))
+                return 0
+            if args.command == "markets" and args.markets_command == "cache":
+                snapshot = market_data_service.latest_cached_snapshot(args.id)
+                if snapshot is None:
+                    print("no_cached_market_snapshot")
+                else:
+                    _print_lines(market_data_lines(snapshot))
+                return 0
+            if args.command == "markets" and args.markets_command == "stream-once":
+                _print_lines(market_data_lines(market_data_service.refresh_from_websocket(args.id)))
+                return 0
             if args.command == "analysis" and args.analysis_command == "outcomes":
                 _print_lines(outcome_analysis_lines(outcome_analysis_service.summarize_outcomes(args.group_by, args.since_hours)))
                 return 0
@@ -706,6 +734,7 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             connection.close()
     finally:
+        gamma_client.close()
         client.close()
     print(f"command={args.command} mode={settings.mode.value}")
     return 0

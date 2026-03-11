@@ -280,6 +280,31 @@ def watchlist_lines(entries) -> list[str]:
     return lines
 
 
+def market_data_lines(snapshot) -> list[str]:
+    return kv_lines(
+        [
+            ("snapshot_id", snapshot.snapshot_id),
+            ("market_id", snapshot.market_id),
+            ("asset_id", snapshot.asset_id),
+            ("source", snapshot.source),
+            ("fetched_at", snapshot.fetched_at.isoformat()),
+            ("data_age_seconds", snapshot.data_age_seconds),
+            ("title", snapshot.market.title),
+            ("event_id", snapshot.market.event_id or "-"),
+            ("active", snapshot.market.active),
+            ("closed", snapshot.market.closed),
+            ("archived", snapshot.market.archived),
+            ("best_bid", f"{snapshot.orderbook.best_bid:.4f}"),
+            ("best_ask", f"{snapshot.orderbook.best_ask:.4f}"),
+            ("midpoint", f"{snapshot.orderbook.midpoint:.4f}"),
+            ("spread_pct", f"{snapshot.orderbook.spread_pct:.6f}"),
+            ("orderbook_timestamp", snapshot.orderbook.timestamp.isoformat()),
+            ("last_trade_price", "-" if snapshot.last_trade_price is None else f"{snapshot.last_trade_price:.4f}"),
+            ("websocket_payload_keys", ",".join(sorted(snapshot.websocket_payload.keys())) or "-"),
+        ]
+    )
+
+
 def alert_lines(alerts) -> list[str]:
     lines = [f"alert_count: {len(alerts)}"]
     for alert in alerts:

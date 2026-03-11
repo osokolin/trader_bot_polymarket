@@ -29,6 +29,12 @@ class Market:
     rules_confidence: float
     tags: list[str] = field(default_factory=list)
     has_orderbook: bool = True
+    event_id: str | None = None
+    outcome_token_id: str | None = None
+    active: bool = True
+    closed: bool = False
+    archived: bool = False
+    last_traded_price: float | None = None
 
 
 @dataclass(slots=True)
@@ -39,6 +45,20 @@ class OrderBookSnapshot:
     midpoint: float
     spread_pct: float
     timestamp: datetime
+
+
+@dataclass(slots=True)
+class MarketDataSnapshot:
+    snapshot_id: str
+    market_id: str
+    asset_id: str
+    market: Market
+    orderbook: OrderBookSnapshot
+    fetched_at: datetime
+    source: str
+    data_age_seconds: int
+    last_trade_price: float | None = None
+    websocket_payload: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

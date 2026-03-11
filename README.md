@@ -11,7 +11,7 @@ Current defaults remain strict:
 The repository currently includes:
 - proposal generation and policy gating
 - proposal lifecycle with approval, edits, rejection, TTL expiry, and revalidation
-- Polymarket metadata and order-book adapters
+- public Polymarket Gamma/CLOB market-data adapters plus market snapshot cache
 - persisted order intents and simulation-only execution pipeline
 - paper execution, decision review, execution evaluation, outcome analysis
 - CLI operator tooling
@@ -66,6 +66,9 @@ bot proposals decision-review <proposal_id>
 bot intents list --scope terminal
 bot intents latest-simulated
 bot alerts list --state open
+bot markets live <market_id>
+bot markets cache <market_id>
+bot markets stream-once <market_id>
 bot analysis outcomes --group-by market
 bot portfolio summary
 ```
@@ -104,6 +107,7 @@ Available UI areas:
 - proposals and intents
 - alerts with acknowledge/dismiss/resolve actions
 - research and probability snapshots
+- live market data inspection
 - integrated decision review pages
 - outcome analysis
 - saved views
@@ -130,6 +134,7 @@ Available UI areas:
 .venv/bin/bot alerts list --state open
 .venv/bin/bot proposals list --scope approved
 .venv/bin/bot intents list --scope terminal
+.venv/bin/bot markets live demo_rates_2026
 ```
 
 3. Start the UI:
@@ -149,10 +154,25 @@ Module entrypoint works as well:
 4. In the UI:
 - check the dashboard summary cards
 - open an approved proposal
+- inspect live market data for its market
 - open its integrated decision review
 - inspect the latest execution evaluation
 - open saved views
 - open export pages from decision review or analysis pages
+
+## Live Market Data
+
+Public market-data integration uses:
+- Gamma API for market/event metadata
+- CLOB REST endpoints for public order book and last-trade pricing
+- public market WebSocket updates with reconnect/backoff
+
+Approval revalidation now fails closed if public market data is stale, malformed, or unavailable.
+This integration does not enable live trading:
+- no authenticated trading
+- no order posting
+- no user channel
+- live execution remains disabled
 
 ## Testing
 
