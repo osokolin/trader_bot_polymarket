@@ -76,9 +76,9 @@ class DemoSmokeTest(unittest.TestCase):
                     )
                     status, home = app.render_response("/")
                     self.assertEqual(status, "200 OK")
-                    self.assertIn("Operator Dashboard", home)
+                    self.assertIn("Панель оператора", home)
                     self.assertIn(seed_payload["approved_proposal_id"], home)
-                    self.assertIn("Latest Simulation", home)
+                    self.assertIn("Последняя симуляция", home)
                 finally:
                     connection.close()
 

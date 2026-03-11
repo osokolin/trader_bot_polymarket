@@ -3,6 +3,37 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from bot.domain.models import Market, OrderBookSnapshot
+
+
+@dataclass(slots=True)
+class GammaMarketMetadata:
+    market: Market
+    asset_id: str
+    raw_payload: dict[str, object]
+
+
+@dataclass(slots=True)
+class ClobOrderBook:
+    asset_id: str
+    snapshot: OrderBookSnapshot
+    last_trade_price: float | None
+    raw_payload: dict[str, object]
+
+
+@dataclass(slots=True)
+class ClobMarketUpdate:
+    asset_id: str
+    best_bid: float
+    best_ask: float
+    midpoint: float
+    spread_pct: float
+    timestamp: datetime
+    market_id: str | None = None
+    last_trade_price: float | None = None
+    sequence_id: str | None = None
+    raw_payload: dict[str, object] = field(default_factory=dict)
+
 
 @dataclass(slots=True)
 class OrderRequest:

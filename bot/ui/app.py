@@ -10,6 +10,7 @@ from bot.domain.models import DecisionReviewSnapshot, OutcomeAnalysisSnapshot, S
 from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService
+from bot.services.market_data import LiveMarketDataService
 from bot.services.operator_notifications import OperatorNotificationsService
 from bot.services.outcome_analysis import OutcomeAnalysisService
 from bot.services.proposal_lifecycle import ProposalLifecycleService
@@ -41,6 +42,7 @@ class OperatorDashboardServices:
     outcome_analysis_service: OutcomeAnalysisService
     saved_view_service: SavedViewService
     reporting_service: ReportingService
+    market_data_service: LiveMarketDataService | None = None
 
 
 class OperatorDashboardApp:
@@ -80,6 +82,8 @@ class OperatorDashboardApp:
         "timeline_events": "Событий в таймлайне",
         "latest_execution_status": "Статус последнего исполнения",
         "reference_price": "Опорная цена",
+        "best_bid": "Лучшая bid цена",
+        "best_ask": "Лучшая ask цена",
         "simulated_price": "Смоделированная цена",
         "completion_reason": "Причина завершения",
         "latency_ms": "Задержка, мс",
@@ -103,6 +107,7 @@ class OperatorDashboardApp:
         "fair_probability_delta": "Изменение вероятности",
         "proposal_snapshot": "Снимок предложения",
         "fill_timestamp": "Время исполнения",
+        "source": "Источник",
     }
 
     VALUE_LABELS = {
@@ -130,6 +135,8 @@ class OperatorDashboardApp:
         "proposal": "предложение",
         "market": "рынок",
         "intent": "намерение",
+        "active": "активен",
+        "closed": "закрыт",
         "outcomes": "итоги",
         "learning_summary": "обучающая сводка",
         "better_than_expected": "лучше ожиданий",
@@ -197,6 +204,8 @@ class OperatorDashboardApp:
             return "200 OK", self._alert_action(path.split("/")[2], path.split("/")[3], query)
         if path == "/research":
             return "200 OK", self._research_index(query)
+        if path.startswith("/markets/live/"):
+            return "200 OK", self._live_market_detail(path.rsplit("/", 1)[1])
         if path.startswith("/research/proposals/"):
             return "200 OK", self._proposal_snapshot_detail(path.rsplit("/", 1)[1])
         if path.startswith("/research/markets/"):
@@ -652,10 +661,11 @@ class OperatorDashboardApp:
                 if market_id is None
                 else link_row(
                     [
-                        ("снимок рынка", f"/research/markets/{market_id}"),
-                        ("разбор решения по рынку", f"/decision-reviews/markets/{market_id}"),
-                    ]
-                )
+                    ("снимок рынка", f"/research/markets/{market_id}"),
+                    ("live market", f"/markets/live/{market_id}"),
+                    ("разбор решения по рынку", f"/decision-reviews/markets/{market_id}"),
+                ]
+            )
             ),
         )
         return page("Исследование", body)
@@ -722,7 +732,51 @@ class OperatorDashboardApp:
             )
             + chips(snapshot.research_summary.evidence_summary, empty_message="нет сводки по evidence"),
         )
+        body += panel("Live market data", link_row([("live snapshot", f"/markets/live/{market_id}")]))
         return page("Снимок рынка", body)
+
+    def _live_market_detail(self, market_id: str) -> str:
+        if self.services.market_data_service is None:
+            raise ValueError("Live market data service is not configured")
+        snapshot = self.services.market_data_service.fetch_live_snapshot(market_id)
+        cached = self.services.market_data_service.latest_cached_snapshot(market_id)
+        body = hero("Рыночные live-данные", "Публичные metadata и CLOB pricing без включения live trading.")
+        body += panel(
+            f"Market {market_id}",
+            self._kv(
+                [
+                    ("snapshot_id", snapshot.snapshot_id),
+                    ("market_id", snapshot.market_id),
+                    ("market_title", snapshot.market.title),
+                    ("status", "active" if snapshot.market.active else "closed"),
+                    ("source", snapshot.source),
+                    ("data_age_seconds", snapshot.data_age_seconds),
+                    ("current_price", f"{snapshot.orderbook.midpoint:.4f}"),
+                    ("reference_price", "-" if snapshot.last_trade_price is None else f"{snapshot.last_trade_price:.4f}"),
+                    ("created_at", snapshot.fetched_at.isoformat()),
+                ]
+            )
+            + link_row(
+                [
+                    ("research snapshot", f"/research/markets/{market_id}"),
+                    ("cached history", f"/research?market_id={market_id}"),
+                ]
+            ),
+        )
+        if cached is not None:
+            body += panel(
+                "Последний cached snapshot",
+                self._kv(
+                    [
+                        ("snapshot_id", cached.snapshot_id),
+                        ("source", cached.source),
+                        ("data_age_seconds", cached.data_age_seconds),
+                        ("best_bid", f"{cached.orderbook.best_bid:.4f}"),
+                        ("best_ask", f"{cached.orderbook.best_ask:.4f}"),
+                    ]
+                ),
+            )
+        return page("Рыночные live-данные", body)
 
     def _decision_review_index(self, query: dict[str, list[str]]) -> str:
         proposal = self.services.proposal_service.latest_approved_proposal()

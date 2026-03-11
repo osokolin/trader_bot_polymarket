@@ -403,6 +403,12 @@ class ProposalLifecycleService:
             "revalidated_confidence": snapshot.probability.confidence,
             "revalidated_data_age_seconds": snapshot.data_age_seconds,
         }
+        if snapshot.market_snapshot_id is not None:
+            payload["revalidated_market_snapshot_id"] = snapshot.market_snapshot_id
+        if snapshot.snapshot_source is not None:
+            payload["revalidated_market_snapshot_source"] = snapshot.snapshot_source
+        if snapshot.last_trade_price is not None:
+            payload["revalidated_last_trade_price"] = snapshot.last_trade_price
         if snapshot.orderbook is not None:
             payload["revalidated_orderbook_timestamp"] = snapshot.orderbook.timestamp.isoformat()
             payload["revalidated_spread_pct"] = snapshot.orderbook.spread_pct

@@ -9,7 +9,7 @@ description = "Policy-first Polymarket trading assistant scaffold"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [{ name = "OpenAI Codex" }]
-dependencies = ["PyYAML>=6.0", "httpx>=0.28"]
+dependencies = ["PyYAML>=6.0", "httpx>=0.28", "websockets>=15.0"]
 
 [project.scripts]
 bot = "bot.cli.app:main"

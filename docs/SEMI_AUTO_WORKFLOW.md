@@ -31,11 +31,13 @@ At the current milestone depth:
 25. A lightweight operator dashboard UI is available via `bot ui serve`, with thin presentation-only pages for proposals, intents, alerts, research snapshots, decision reviews, and grouped outcome analysis.
 26. The dashboard home page now surfaces summary cards plus latest open alerts, active proposals/intents, recent decision reviews, recent outcome analysis snapshots, alert lifecycle actions, and saved-view entry points.
 27. `bot demo seed` can populate a local operator-ready sandbox dataset, and UI export pages now expose persisted decision review, execution evaluation, and outcome analysis payloads through the reporting layer.
+28. Public live market data can now be inspected through Gamma metadata, public CLOB order-book/pricing endpoints, cached market snapshots, and a public market WebSocket path with reconnect/backoff.
 
 Execution adapters remain non-autonomous; approval currently stops at a verified `approved` state.
-If no live snapshot provider is configured, approve revalidation falls back to the proposal's current limit price.
-When a live order book is available, `current_price` in revalidation uses the midpoint as a temporary execution-price proxy.
+When a live order book is available, approval revalidation uses fresh public market metadata plus fresh CLOB order-book pricing, and `current_price` currently uses the midpoint as a temporary execution-price proxy.
+If live market data is stale, malformed, or unavailable, approval fails closed and the proposal stays pending until the operator retries with healthy data.
 Live execution remains disabled; `semi_auto` still requires manual approval and blocks autonomous order submission.
+Public market-data integration does not include authenticated trading, order posting, or the Polymarket user channel.
 Paper execution uses a deterministic dry-run adapter and writes simulated execution details to review and audit trails.
 Terminal simulated intents are not re-simulated; operators must create a new intent if they need another scenario run.
 Alerting currently covers TTL-nearing proposals, stale approved proposals, superseded active intents, and newly recorded simulated executions.
