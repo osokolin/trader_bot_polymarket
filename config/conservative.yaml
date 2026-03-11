@@ -1,0 +1,13 @@
+# Lower-risk profile for cautious operation.
+position_limits:
+  max_position_pct: 0.04
+  max_theme_exposure_pct: 0.10
+  max_open_positions: 3
+
+entry_rules:
+  min_edge_pct: 0.07
+  min_confidence: 0.78
+
+market_filters:
+  max_spread_pct: 0.02
+

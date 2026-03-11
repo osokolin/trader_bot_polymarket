@@ -1,0 +1,13 @@
+# Higher-risk profile reserved for paper experimentation.
+position_limits:
+  max_position_pct: 0.10
+  max_theme_exposure_pct: 0.20
+  max_open_positions: 6
+
+entry_rules:
+  min_edge_pct: 0.04
+  min_confidence: 0.65
+
+market_filters:
+  max_spread_pct: 0.04
+

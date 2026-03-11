@@ -1,0 +1,109 @@
+# Default operating mode.
+# Allowed values:
+# - paper
+# - manual_only
+# - semi_auto
+# - live_small
+# - live_full
+mode: semi_auto
+
+bankroll:
+  # Total capital used for risk calculations.
+  total_usd: 1000
+  # Capital reserve that remains unused for new positions.
+  reserve_ratio: 0.20
+  # Daily loss limit for new entries.
+  max_daily_loss_usd: 40
+  # Weekly loss limit for new entries.
+  max_weekly_loss_usd: 120
+
+position_limits:
+  # Max bankroll share in one position.
+  max_position_pct: 0.07
+  # Max bankroll share in one theme.
+  max_theme_exposure_pct: 0.15
+  # Max concurrent open positions.
+  max_open_positions: 4
+  # Max bankroll share locked in unresolved markets.
+  max_unresolved_exposure_pct: 0.35
+
+market_filters:
+  # Categories allowed for scanning.
+  allowed_categories:
+    - politics
+    - crypto
+    - legislation
+  # Categories that are always blocked.
+  blocked_categories:
+    - sports
+    - entertainment_live
+  # Minimum market liquidity.
+  min_liquidity_usd: 3000
+  # Maximum bid/ask spread.
+  max_spread_pct: 0.03
+  # Minimum hours to resolution.
+  min_time_to_resolution_hours: 24
+  # Require clear market rules.
+  require_clear_rules: true
+  # Require order book support.
+  require_orderbook: true
+
+entry_rules:
+  # Minimum edge for opening a position.
+  min_edge_pct: 0.05
+  # Minimum model confidence.
+  min_confidence: 0.70
+  # Minimum count of independent confirmations.
+  min_model_agreement: 2
+  # Require trusted source in the signal set.
+  require_trusted_source: true
+  # Block entries after aggressive recent price move.
+  max_price_jump_15m_pct: 0.08
+  # Safe execution starts with limit orders only.
+  order_type: limit_only
+
+exit_rules:
+  # Force-close before resolution.
+  close_before_resolution_hours: 12
+  # Close when edge collapses.
+  take_profit_edge_collapse_pct: 0.02
+  # Close if probability shifts against position.
+  stop_loss_prob_shift_pct: 0.06
+  # Max holding duration.
+  max_holding_hours: 72
+
+ai_policy:
+  # AI must not place orders directly by default.
+  ai_can_place_orders: false
+  # AI may score and explain only.
+  ai_can_only_score: true
+  # Minimum confidence for rule parsing.
+  min_rules_parser_confidence: 0.80
+  # Minimum relevance for news signals.
+  min_news_relevance_score: 0.75
+  # Trusted source types.
+  allowed_source_types:
+    - official
+    - regulator
+    - major_media
+
+approvals:
+  # Semi-auto requires manual approval.
+  manual_approval_required: true
+  # Reserved for future auto-execution logic.
+  auto_execute_if_score_above: 0.90
+  # Global hard block for auto-execution.
+  auto_execute_disabled: true
+  # Approval time-to-live in minutes.
+  proposal_ttl_minutes: 5
+
+safety:
+  # Kill switch blocks new entries when false.
+  kill_switch_enabled: true
+  # Pause after repeated API failures.
+  pause_on_api_errors: 3
+  # Pause after repeated losing trades.
+  pause_on_consecutive_losses: 4
+  # Pause on unexpected position state.
+  pause_on_unexpected_position_state: true
+

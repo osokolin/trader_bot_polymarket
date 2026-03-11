@@ -1,0 +1,20 @@
+# Trusted official domains.
+official_sources:
+  - sec.gov
+  - congress.gov
+  - senate.gov
+  - house.gov
+  - whitehouse.gov
+
+# Trusted regulator domains.
+regulator_sources:
+  - cftc.gov
+  - federalreserve.gov
+  - treasury.gov
+
+# Trusted major media domains.
+major_media_sources:
+  - reuters.com
+  - apnews.com
+  - bloomberg.com
+

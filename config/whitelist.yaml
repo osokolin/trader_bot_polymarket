@@ -1,0 +1,7 @@
+# Explicitly allowed markets and tags.
+allowed_market_ids: []
+allowed_tags:
+  - crypto
+  - regulation
+  - politics
+

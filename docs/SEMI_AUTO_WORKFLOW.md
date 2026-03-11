@@ -1,0 +1,52 @@
+# Semi-Auto Workflow
+
+The repository keeps `semi_auto` as the default operating mode.
+
+At the current milestone depth:
+
+1. Market and signal inputs are converted into a candidate trade proposal.
+2. The candidate passes through the composite policy engine.
+3. Approved proposals are persisted with status `pending_manual_confirmation`.
+4. Operators may edit size and limit price while the proposal is still pending.
+5. Manual approval triggers immediate pre-trade revalidation.
+6. Revalidation failures move the proposal to `policy_rejected`.
+7. Manual rejection or TTL expiry moves the proposal to `cancelled`.
+8. Every transition is written to the audit log and to proposal review records.
+9. Operators can inspect active and terminal proposals/intents, plus review and audit history, through CLI list/show commands.
+10. Runtime safety inspection exposes the current mode, profile, kill switch state, unresolved exposure, and whether the semi-auto execution boundary is still strict.
+11. CLI list output now distinguishes total-status summaries for the full result set from returned-page summaries after pagination.
+12. Operators may run explicit paper simulations for prepared intents and inspect simulated execution history, slippage, reference price, and fill timestamps.
+13. Simulation analytics expose per-intent and overall dry-run summary statistics, plus latest simulated execution lookup.
+14. Portfolio and session summaries aggregate proposal, intent, and simulated execution metrics, with optional time-window filters.
+15. Operators can maintain watchlists for markets, proposals, and intents, and inspect persisted alerts with watchlist-only filtering.
+16. Probability and research snapshots are persisted on proposal creation and approval revalidation, and can be inspected by proposal or market.
+17. Probability compare views expose drift between the latest and previous snapshots for the same proposal or market.
+18. Decision review snapshots compose the latest proposal, probability snapshot, probability drift, intent, and simulated execution outcome into operator-readable post-hoc feedback by proposal or market.
+19. Probability snapshots now retain normalized evidence records, per-source weights, and source-type contribution breakdowns for operator research inspection.
+20. Paper execution now simulates bid/ask-aware pricing, latency, partial-fill fragments, and terminal completion paths such as filled, expired, or cancelled.
+21. Execution evaluation snapshots now compare intended execution terms against simulated outcomes and persist operator-facing verdicts by intent or proposal.
+22. Meta-analysis snapshots now aggregate decision review, drift, and execution outcome patterns by market, category, source type, confidence band, and verdict type.
+23. Alerts now support acknowledgement, dismissal, and resolution states, while saved CLI views can persist common listing and analysis filters.
+24. Operator exports and digest commands can emit persisted decision reviews, execution evaluations, outcome analyses, and daily/session summaries.
+25. A lightweight operator dashboard UI is available via `bot ui serve`, with thin presentation-only pages for proposals, intents, alerts, research snapshots, decision reviews, and grouped outcome analysis.
+26. The dashboard home page now surfaces summary cards plus latest open alerts, active proposals/intents, recent decision reviews, recent outcome analysis snapshots, alert lifecycle actions, and saved-view entry points.
+27. `bot demo seed` can populate a local operator-ready sandbox dataset, and UI export pages now expose persisted decision review, execution evaluation, and outcome analysis payloads through the reporting layer.
+
+Execution adapters remain non-autonomous; approval currently stops at a verified `approved` state.
+If no live snapshot provider is configured, approve revalidation falls back to the proposal's current limit price.
+When a live order book is available, `current_price` in revalidation uses the midpoint as a temporary execution-price proxy.
+Live execution remains disabled; `semi_auto` still requires manual approval and blocks autonomous order submission.
+Paper execution uses a deterministic dry-run adapter and writes simulated execution details to review and audit trails.
+Terminal simulated intents are not re-simulated; operators must create a new intent if they need another scenario run.
+Alerting currently covers TTL-nearing proposals, stale approved proposals, superseded active intents, and newly recorded simulated executions.
+Probability snapshots now retain normalized key factors, source counts, confidence components, and research context for operator review.
+Drift reporting highlights deltas in fair probability, confidence, source count, confidence components, and factor additions/removals.
+Decision review output summarizes whether confidence held or degraded, whether probability moved in favor or against the trade thesis, and whether the latest simulated execution looked favorable or unfavorable.
+Research and probability views now expose evidence summaries and source-type contribution changes alongside factor drift.
+Execution history and timeline views now expose simulated bid/ask context, fragment-level fills, latency, and expiry/cancel completion reasons.
+Execution evaluation views summarize intended vs realized price, expected vs filled size, expected vs realized timing, intended completion vs actual completion reason, and assign a verdict such as better, within range, worse, expired, cancelled, or partially filled.
+Outcome analysis views now expose grouped learning summaries across persisted decision reviews and execution evaluations, with cached snapshots for later inspection.
+Alert inspection now includes lifecycle state, and saved views provide reusable operator filters for listings and grouped analyses.
+The operator dashboard is presentation-only and reuses the same proposal, execution, notification, decision-review, and outcome-analysis services as the CLI.
+UI alert actions call the same acknowledgment, dismissal, and resolution service methods used by the CLI; no alert mutation logic lives in the presentation layer.
+Integrated decision-review pages now join proposal context, persisted probability snapshot, drift summary, latest intent, simulated execution outcome, and latest execution evaluation into a single operator view.

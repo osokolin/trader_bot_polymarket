@@ -1,0 +1,8 @@
+# Explicitly blocked markets and title patterns.
+blocked_market_ids: []
+blocked_patterns:
+  - live
+  - sports
+  - celebrity
+  - gossip
+
