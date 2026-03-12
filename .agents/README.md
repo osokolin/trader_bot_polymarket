@@ -8,7 +8,7 @@ This project uses a structured multi-agent workflow.
 - Implementer — makes code changes only within the approved scope.
 - Tester — runs verification commands and reports exact results.
 - Reviewer — performs code review for correctness, safety, and maintainability.
-- Security — reviews safety boundaries, API integrations, and execution constraints.
+- Security — reviews safety boundaries, external API integrations, and execution constraints.
 - Committer — creates a commit only when all gates are green.
 
 ## Core rules
@@ -23,10 +23,10 @@ This project uses a structured multi-agent workflow.
 9. Fail closed on stale, malformed, or unavailable external data.
 10. Do not commit unless tests, review, and security gates pass.
 
-## Required verification commands
+## Preferred verification scripts
 
-Always run at minimum:
+Use scripts when available:
 
+### Fast verification
 ```bash
-python -m unittest discover -s tests -v
-python -m py_compile $(find bot tests -name '*.py' | sort)
+scripts/verify-fast.sh
