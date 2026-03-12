@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from bot.domain.enums import ProposalStatus
 from bot.services.telegram_operator_service import TelegramNotification
+from bot.telegram.actions import proposal_callback
 
 
 def unauthorized_message() -> str:
@@ -18,6 +20,10 @@ def help_message() -> str:
         "/scan\n"
         "/proposals\n"
         "/proposal <id>\n"
+        "/approve <id>\n"
+        "/reject <id>\n"
+        "/cancel <id>\n"
+        "/analysis <id>\n"
         "/alerts"
     )
 
@@ -96,6 +102,31 @@ def proposal_message(proposal) -> str:
     )
 
 
+def proposal_action_message(action: str, proposal) -> str:
+    labels = {
+        "approve": "Proposal approved",
+        "reject": "Proposal rejected",
+        "cancel": "Proposal cancelled",
+    }
+    return f"{labels[action]}\nProposal ID: {proposal.proposal_id}"
+
+
+def proposal_analysis_message(analysis) -> str:
+    drift = analysis.decision_review.probability_drift
+    latest = analysis.decision_review.probability_snapshot
+    previous_probability = "-" if drift.previous_snapshot is None else f"{drift.previous_snapshot.probability.fair_probability:.4f}"
+    probability_drift = "-" if drift.fair_probability_delta is None else f"{drift.fair_probability_delta:+.4f}"
+    return (
+        "Additional Analysis\n\n"
+        f"Proposal ID: {analysis.proposal.proposal_id}\n"
+        f"Latest probability: {latest.probability.fair_probability:.4f}\n"
+        f"Previous probability: {previous_probability}\n"
+        f"Drift: {probability_drift}\n"
+        f"Confidence: {latest.probability.confidence:.2f}\n"
+        f"Scanner rationale: {analysis.scanner_rationale}"
+    )
+
+
 def alerts_message(alerts) -> str:
     if not alerts:
         return "Alerts\n\nNo open alerts."
@@ -126,3 +157,33 @@ def notification_message(notification: TelegramNotification) -> str:
     if notification.kind == "diagnostics_failure":
         return f"Diagnostics failure\n\n{diagnostics_message(notification.payload)}"
     return "Unknown notification"
+
+
+def proposal_actions_markup(proposal) -> dict[str, object] | None:
+    first_row: list[dict[str, str]] = []
+    if proposal.status == ProposalStatus.PENDING_MANUAL_CONFIRMATION:
+        first_row.extend(
+            [
+                {"text": "Approve", "callback_data": proposal_callback("approve", proposal.proposal_id)},
+                {"text": "Reject", "callback_data": proposal_callback("reject", proposal.proposal_id)},
+            ]
+        )
+    if proposal.status in {ProposalStatus.PENDING_MANUAL_CONFIRMATION, ProposalStatus.APPROVED}:
+        first_row.append({"text": "Cancel", "callback_data": proposal_callback("cancel", proposal.proposal_id)})
+
+    rows: list[list[dict[str, str]]] = []
+    if first_row:
+        rows.append(first_row)
+    rows.append(
+        [
+            {"text": "More Analysis", "callback_data": proposal_callback("analysis", proposal.proposal_id)},
+            {"text": "Details", "callback_data": proposal_callback("details", proposal.proposal_id)},
+        ]
+    )
+    return {"inline_keyboard": rows}
+
+
+def notification_markup(notification: TelegramNotification) -> dict[str, object] | None:
+    if notification.kind == "draft_proposal":
+        return proposal_actions_markup(notification.payload)
+    return None

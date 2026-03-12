@@ -472,6 +472,7 @@ def main(argv: list[str] | None = None) -> int:
                 profile=args.profile,
                 execution_adapter=execution_service.execution_adapter,
                 proposal_service=proposal_service,
+                decision_review_service=decision_review_service,
                 notifications_service=notifications_service,
                 scanner_service=market_opportunity_scanner,
                 diagnostics_service=PolymarketDiagnosticsService(

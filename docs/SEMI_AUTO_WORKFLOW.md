@@ -35,7 +35,7 @@ At the current milestone depth:
 29. Operator catalog views now expose public Gamma market and event listings through `bot markets catalog --scope active|closed|all`, `bot events catalog --scope active|closed|all`, `/catalog/markets`, and `/catalog/events`.
 30. `bot markets scan` provides a read-only market opportunity scan over active markets, using cached-or-live market pricing plus a deterministic scanner fair-value heuristic, with filtering by absolute edge magnitude, liquidity, and result limit.
 31. `bot markets draft-opportunities` can convert scanner results into safe draft proposals through the existing proposal lifecycle, while deduping against active proposals for the same market and leaving approval, intent creation, and execution unchanged.
-32. `bot telegram serve` exposes a read-only Telegram operator inbox with allowlisted chat access, concise status/diagnostics/scanner/proposal/alert commands, and notification polling for new draft proposals, new open alerts, and diagnostics failures.
+32. `bot telegram serve` exposes an allowlisted Telegram operator inbox with concise status/diagnostics/scanner/proposal/alert commands, notification polling for new draft proposals, new open alerts, and diagnostics failures, plus safe proposal actions for approve/reject/cancel/request-analysis through the existing lifecycle services.
 
 Execution adapters remain non-autonomous; approval currently stops at a verified `approved` state.
 When a live order book is available, approval revalidation uses fresh public market metadata plus fresh CLOB `/book` and `/midpoint` pricing, and `current_price` currently uses the midpoint as a temporary execution-price proxy.
@@ -43,7 +43,7 @@ The separate CLOB `/price` value is treated as a reference-price field; if it is
 If live market data is stale, malformed, or unavailable, approval fails closed and the proposal stays pending until the operator retries with healthy data.
 Live execution remains disabled; `semi_auto` still requires manual approval and blocks autonomous order submission.
 Public market-data integration does not include authenticated trading, order posting, or the Polymarket user channel.
-Telegram Phase 1 is read-only only: it does not approve or reject proposals, create intents, submit orders, simulate execution, or mutate runtime mode/configuration.
+Telegram proposal actions remain lifecycle-bound and execution-safe: they may approve, reject, cancel, or request additional analysis for proposals, but they do not create intents, submit orders, simulate execution, or mutate runtime mode/configuration.
 Operator inspection paths are cache-first by default. The UI live-market page and `bot markets live <market_id>` prefer the latest cached snapshot and only refresh externally when the operator asks for it.
 Paper execution uses a deterministic dry-run adapter and writes simulated execution details to review and audit trails.
 Terminal simulated intents are not re-simulated; operators must create a new intent if they need another scenario run.

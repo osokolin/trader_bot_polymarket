@@ -32,15 +32,35 @@ class TelegramApiClient:
         return data.get("result", [])
 
     def send_message(self, chat_id: int, text: str) -> None:
+        self.send_message_with_markup(chat_id, text, reply_markup=None)
+
+    def send_message_with_markup(self, chat_id: int, text: str, reply_markup: dict[str, object] | None) -> None:
+        payload: dict[str, object] = {"chat_id": chat_id, "text": text}
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
         response = self.http_client.post(
             f"{self.base_url}/sendMessage",
-            json={"chat_id": chat_id, "text": text},
+            json=payload,
             timeout=self.timeout_seconds,
         )
         response.raise_for_status()
         data = response.json()
         if not data.get("ok", False):
             raise RuntimeError("Telegram sendMessage failed")
+
+    def answer_callback_query(self, callback_query_id: str, text: str | None = None) -> None:
+        payload: dict[str, object] = {"callback_query_id": callback_query_id}
+        if text:
+            payload["text"] = text[:160]
+        response = self.http_client.post(
+            f"{self.base_url}/answerCallbackQuery",
+            json=payload,
+            timeout=self.timeout_seconds,
+        )
+        response.raise_for_status()
+        data = response.json()
+        if not data.get("ok", False):
+            raise RuntimeError("Telegram answerCallbackQuery failed")
 
     def close(self) -> None:
         self.http_client.close()
@@ -66,11 +86,14 @@ class TelegramBotApp:
             if isinstance(update_id, int):
                 next_offset = update_id + 1
             for outbound in self.router.handle_update(update):
-                self.client.send_message(outbound.chat_id, outbound.text)
+                if outbound.callback_query_id is not None:
+                    self.client.answer_callback_query(outbound.callback_query_id, text=outbound.text.splitlines()[0])
+                self.client.send_message_with_markup(outbound.chat_id, outbound.text, outbound.reply_markup)
         for notification in self.operator_service.poll_notifications():
             text = formatter.notification_message(notification)
+            reply_markup = formatter.notification_markup(notification)
             for chat_id in sorted(self.router.auth.allowed_chat_ids):
-                self.client.send_message(chat_id, text)
+                self.client.send_message_with_markup(chat_id, text, reply_markup)
         return next_offset
 
 

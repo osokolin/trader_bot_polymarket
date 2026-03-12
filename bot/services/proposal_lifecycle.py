@@ -190,22 +190,77 @@ class ProposalLifecycleService:
         )
         return updated
 
-    def reject(self, proposal_id: str, actor: str, note: str | None = None) -> TradeProposal:
+    def reject(
+        self,
+        proposal_id: str,
+        actor: str,
+        note: str | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> TradeProposal:
         proposal = self.get(proposal_id)
         if proposal.status != ProposalStatus.PENDING_MANUAL_CONFIRMATION:
             raise ProposalLifecycleError("Only pending proposals can be rejected")
         transition_at = utc_now()
         updated = replace(proposal, status=ProposalStatus.CANCELLED, updated_at=transition_at)
         self.proposal_repository.save(updated)
-        self._record_review(updated.proposal_id, "reject", actor, note, {}, transition_at)
+        payload = {} if metadata is None else dict(metadata)
+        self._record_review(updated.proposal_id, "reject", actor, note, payload, transition_at)
         self.audit_log.log(
             "proposal_rejected_manually",
             updated.proposal_id,
             "Proposal rejected manually",
-            {"actor": actor, "note": note, "status": updated.status.value},
+            {"actor": actor, "note": note, "status": updated.status.value, **payload},
             created_at=transition_at,
         )
         return updated
+
+    def cancel(
+        self,
+        proposal_id: str,
+        actor: str,
+        note: str | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> TradeProposal:
+        proposal = self.get(proposal_id)
+        if proposal.status not in {ProposalStatus.PENDING_MANUAL_CONFIRMATION, ProposalStatus.APPROVED}:
+            raise ProposalLifecycleError("Only pending or approved proposals can be cancelled")
+        transition_at = utc_now()
+        updated = replace(proposal, status=ProposalStatus.CANCELLED, updated_at=transition_at)
+        self.proposal_repository.save(updated)
+        payload = {"previous_status": proposal.status.value}
+        if metadata is not None:
+            payload.update(metadata)
+        self._record_review(updated.proposal_id, "cancel", actor, note, payload, transition_at)
+        self.audit_log.log(
+            "proposal_cancelled_manually",
+            updated.proposal_id,
+            "Proposal cancelled manually",
+            {"actor": actor, "note": note, "status": updated.status.value, **payload},
+            created_at=transition_at,
+        )
+        return updated
+
+    def request_additional_analysis(
+        self,
+        proposal_id: str,
+        actor: str,
+        note: str | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> TradeProposal:
+        proposal = self.get(proposal_id)
+        transition_at = utc_now()
+        payload = {"status": proposal.status.value}
+        if metadata is not None:
+            payload.update(metadata)
+        self._record_review(proposal.proposal_id, "request_analysis", actor, note, payload, transition_at)
+        self.audit_log.log(
+            "proposal_analysis_requested",
+            proposal.proposal_id,
+            "Additional analysis requested",
+            {"actor": actor, "note": note, **payload},
+            created_at=transition_at,
+        )
+        return proposal
 
     def approve(
         self,
@@ -218,6 +273,7 @@ class ProposalLifecycleService:
         market: Market | None = None,
         probability: ProbabilityEstimate | None = None,
         data_age_seconds: int | None = None,
+        metadata: dict[str, object] | None = None,
     ) -> TradeProposal:
         proposal = self.get(proposal_id)
         transition_at = utc_now()
@@ -278,7 +334,13 @@ class ProposalLifecycleService:
                 "revalidate_reject",
                 actor,
                 None,
-                self._revalidation_payload(snapshot, {"reasons": [item.value for item in decision.reasons]}),
+                self._revalidation_payload(
+                    snapshot,
+                    {
+                        "reasons": [item.value for item in decision.reasons],
+                        **({} if metadata is None else metadata),
+                    },
+                ),
                 transition_at,
             )
             self.audit_log.log(
@@ -287,7 +349,11 @@ class ProposalLifecycleService:
                 "Proposal failed pre-trade revalidation",
                 self._revalidation_payload(
                     snapshot,
-                    {"actor": actor, "reasons": [item.value for item in decision.reasons]},
+                    {
+                        "actor": actor,
+                        "reasons": [item.value for item in decision.reasons],
+                        **({} if metadata is None else metadata),
+                    },
                 ),
                 created_at=transition_at,
             )
@@ -326,6 +392,7 @@ class ProposalLifecycleService:
                 {
                     "current_size_usd": approved.current_size_usd,
                     "current_limit_price": approved.current_limit_price,
+                    **({} if metadata is None else metadata),
                 },
             ),
             transition_at,
@@ -336,7 +403,7 @@ class ProposalLifecycleService:
             "Proposal approved after revalidation",
             self._revalidation_payload(
                 snapshot,
-                {"actor": actor, "status": approved.status.value},
+                {"actor": actor, "status": approved.status.value, **({} if metadata is None else metadata)},
             ),
             created_at=transition_at,
         )

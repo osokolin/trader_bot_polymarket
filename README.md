@@ -183,14 +183,23 @@ Supported commands:
 - `/scan`
 - `/proposals`
 - `/proposal <id>`
+- `/approve <id>`
+- `/reject <id>`
+- `/cancel <id>`
+- `/analysis <id>`
 - `/alerts`
 
-Phase 1 remains read-only:
-- no proposal approval
-- no proposal rejection
+Phase 2 adds safe proposal lifecycle actions:
+- allowlisted operators may approve, reject, cancel, and request additional analysis for proposals
+- proposal actions reuse the existing lifecycle and decision-review services
+- inline buttons are included on draft proposal notifications and proposal detail responses
+
+Telegram still remains execution-safe:
 - no intent creation
 - no execution submission
 - no runtime/config mutation
+- no order posting
+- no live execution
 
 ## Live Market Data
 

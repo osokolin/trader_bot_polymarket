@@ -5,10 +5,11 @@ from time import monotonic
 
 from bot.config.models import Settings
 from bot.domain.enums import AlertState, ProposalStatus
-from bot.domain.models import OperatorAlert, TradeProposal
+from bot.domain.models import DecisionReview, OperatorAlert, TradeProposal
+from bot.services.decision_review import DecisionReviewService
 from bot.services.market_opportunity_scanner import MarketOpportunityScannerService
 from bot.services.polymarket_diagnostics import PolymarketDiagnosticsResult, PolymarketDiagnosticsService
-from bot.services.proposal_lifecycle import ProposalLifecycleService
+from bot.services.proposal_lifecycle import ProposalLifecycleError, ProposalLifecycleService
 from bot.services.runtime_safety import build_runtime_safety_snapshot
 from bot.services.operator_notifications import OperatorNotificationsService
 
@@ -20,11 +21,19 @@ class TelegramNotification:
 
 
 @dataclass(slots=True)
+class TelegramProposalAnalysis:
+    proposal: TradeProposal
+    decision_review: DecisionReview
+    scanner_rationale: str
+
+
+@dataclass(slots=True)
 class TelegramOperatorService:
     settings: Settings
     profile: str
     execution_adapter: object
     proposal_service: ProposalLifecycleService
+    decision_review_service: DecisionReviewService
     notifications_service: OperatorNotificationsService
     scanner_service: MarketOpportunityScannerService
     diagnostics_service: PolymarketDiagnosticsService
@@ -66,6 +75,57 @@ class TelegramOperatorService:
 
     def get_proposal_details(self, proposal_id: str) -> TradeProposal:
         return self.proposal_service.latest_proposal_state(proposal_id)
+
+    def approve_proposal(self, proposal_id: str, chat_id: int) -> TradeProposal:
+        try:
+            return self.proposal_service.approve(
+                self.settings,
+                proposal_id,
+                actor="telegram",
+                open_positions=0,
+                unresolved_exposure_usd=0.0,
+                theme_exposure_usd=0.0,
+                metadata=self._telegram_metadata(chat_id, proposal_id, "approve"),
+            )
+        except ProposalLifecycleError as exc:
+            raise ProposalLifecycleError(self._friendly_transition_message("approve", exc)) from exc
+
+    def reject_proposal(self, proposal_id: str, chat_id: int) -> TradeProposal:
+        try:
+            return self.proposal_service.reject(
+                proposal_id,
+                actor="telegram",
+                metadata=self._telegram_metadata(chat_id, proposal_id, "reject"),
+            )
+        except ProposalLifecycleError as exc:
+            raise ProposalLifecycleError(self._friendly_transition_message("reject", exc)) from exc
+
+    def cancel_proposal(self, proposal_id: str, chat_id: int) -> TradeProposal:
+        try:
+            return self.proposal_service.cancel(
+                proposal_id,
+                actor="telegram",
+                metadata=self._telegram_metadata(chat_id, proposal_id, "cancel"),
+            )
+        except ProposalLifecycleError as exc:
+            raise ProposalLifecycleError(self._friendly_transition_message("cancel", exc)) from exc
+
+    def request_additional_analysis(self, proposal_id: str, chat_id: int) -> TelegramProposalAnalysis:
+        proposal = self.proposal_service.request_additional_analysis(
+            proposal_id,
+            actor="telegram",
+            metadata=self._telegram_metadata(chat_id, proposal_id, "analysis"),
+        )
+        try:
+            decision_review = self.decision_review_service.create_for_proposal(proposal_id)
+        except Exception as exc:
+            raise ProposalLifecycleError(f"Additional analysis unavailable: {exc}") from exc
+        scanner_rationale = proposal.thesis[0] if proposal.thesis else "No scanner rationale recorded."
+        return TelegramProposalAnalysis(
+            proposal=proposal,
+            decision_review=decision_review,
+            scanner_rationale=scanner_rationale,
+        )
 
     def list_alerts(self, limit: int = 5) -> list[OperatorAlert]:
         return self.notifications_service.list_alerts(state=AlertState.OPEN)[:limit]
@@ -121,3 +181,22 @@ class TelegramOperatorService:
             return False
         self._last_diagnostics_check_monotonic = now
         return True
+
+    def _telegram_metadata(self, chat_id: int, proposal_id: str, action: str) -> dict[str, object]:
+        return {
+            "source": "telegram",
+            "chat_id": chat_id,
+            "proposal_id": proposal_id,
+            "action": action,
+        }
+
+    def _friendly_transition_message(self, action: str, exc: ProposalLifecycleError) -> str:
+        lower_message = str(exc).lower()
+        if "ttl expired" in lower_message or "only pending" in lower_message or "only pending or approved" in lower_message:
+            verb = {
+                "approve": "approved",
+                "reject": "rejected",
+                "cancel": "cancelled",
+            }.get(action, action)
+            return f"This proposal can no longer be {verb}."
+        return str(exc)
