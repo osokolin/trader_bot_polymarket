@@ -1709,7 +1709,7 @@ class AuthenticatedOperatorDashboardApp(OperatorDashboardApp):
                 <span><input type="checkbox" name="remember_browser" value="1"> запомнить этот браузер</span>
               </label>
               <div class="form-actions">
-                <button type="submit">Войти</button>
+            <button type="submit">Войти</button>
               </div>
             </form>
             """,

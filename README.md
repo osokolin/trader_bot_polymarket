@@ -197,7 +197,6 @@ Canonical production update flow:
 4. restart `trader-bot-telegram.service` and `trader-bot-ui.service`
 
 For the full production guide, see [docs/DEPLOY.md](./docs/DEPLOY.md).
-
 ## UI Screenshots
 
 ![Dashboard Home](./docs/images/ui-dashboard-home.png)
