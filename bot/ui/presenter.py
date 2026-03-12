@@ -73,6 +73,19 @@ def page(title: str, body: str) -> str:
     .empty {{ color: var(--muted); font-style: italic; }}
     code {{ font-family: "SFMono-Regular", "Menlo", "Consolas", monospace; font-size: 0.92em; }}
     .toolbar {{ display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; color: var(--muted); }}
+    .toolbar form {{ margin: 0; }}
+    .toolbar button {{
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      background: var(--chip);
+      border-radius: 999px;
+      font: inherit;
+      color: var(--ink);
+      cursor: pointer;
+    }}
+    .toolbar button.good {{ background: #dfeedd; }}
+    .toolbar button.warn {{ background: #f7e7c7; }}
+    .toolbar button.bad {{ background: #f4d6d1; }}
     .cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-top: 18px; }}
     .card {{
       padding: 14px;
@@ -100,6 +113,26 @@ def page(title: str, body: str) -> str:
       border: 1px solid var(--line);
       background: rgba(239,226,208,0.9);
     }}
+    input[type="text"], input[type="password"] {{
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      font: inherit;
+      background: rgba(255,255,255,0.9);
+    }}
+    label.field {{
+      display: grid;
+      gap: 6px;
+      margin-bottom: 12px;
+      font-weight: 700;
+    }}
+    .form-actions {{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }}
   </style>
 </head>
 <body>
@@ -124,6 +157,7 @@ def hero(title: str, subtitle: str) -> str:
         <a href="/catalog/markets">Рынки</a>
         <a href="/catalog/events">События</a>
         <a href="/views">Сохраненные виды</a>
+        <a href="/auth/security">Безопасность</a>
       </nav>
     </section>
     """
@@ -163,6 +197,21 @@ def link_row(links: list[tuple[str, str]]) -> str:
         return ""
     parts = [f'<a href="{escape(href, quote=True)}">{escape(label)}</a>' for label, href in links]
     return '<div class="toolbar">' + " ".join(parts) + "</div>"
+
+
+def post_action_row(actions: list[tuple[str, str, dict[str, object], str]]) -> str:
+    if not actions:
+        return ""
+    forms: list[str] = []
+    for label, href, fields, tone in actions:
+        hidden = "".join(
+            f'<input type="hidden" name="{escape(key, quote=True)}" value="{escape(str(value), quote=True)}">'
+            for key, value in fields.items()
+        )
+        forms.append(
+            f'<form method="post" action="{escape(href, quote=True)}">{hidden}<button class="{escape(tone)}" type="submit">{escape(label)}</button></form>'
+        )
+    return '<div class="toolbar">' + "".join(forms) + "</div>"
 
 
 def badge(value: str, tone: str = "warn") -> str:

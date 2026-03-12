@@ -115,6 +115,14 @@ This populates the local `bot.db` with:
 
 ## UI Usage
 
+The production web UI now requires authentication. Create or update the configured operator password before starting the UI:
+
+```bash
+BOT_UI_PASSWORD='choose-a-strong-password' .venv/bin/bot auth set-password --username osokolin
+```
+
+For local development over plain HTTP, keep `BOT_UI_SECURE_COOKIES=false`. In production behind HTTPS, leave secure cookies enabled.
+
 Start the operator dashboard:
 
 ```bash
@@ -136,7 +144,22 @@ Available UI areas:
 - integrated decision review pages
 - outcome analysis
 - saved views
+- web auth security page for logout and auth revocation
 - export pages for decision reviews, execution evaluations, and outcome analysis
+
+### Web Auth
+
+Web auth is single-user for now:
+- username: `osokolin`
+- password: configured out-of-band through `bot auth set-password`
+
+Auth behavior:
+- unauthenticated browsers are redirected to `/login`
+- session auth uses server-side sessions and HttpOnly cookies
+- optional remember-browser uses a separate HttpOnly cookie with server-side hashed token storage
+- remember-browser tokens can be revoked for the current browser
+- all active sessions and remember tokens can be revoked from `/auth/security`
+- no plaintext password is stored in the repo
 
 ## UI Screenshots
 

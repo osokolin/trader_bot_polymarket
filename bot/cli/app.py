@@ -90,6 +90,13 @@ def _resolve_database_path() -> Path:
     raise ValueError("BOT_DATABASE_URL must use sqlite:///...")
 
 
+def _require_password_from_env(env_name: str) -> str:
+    password = os.getenv(env_name)
+    if not password:
+        raise ValueError(f"Environment variable {env_name} is required and must be non-empty.")
+    return password
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bot")
     parser.add_argument("--config-dir", default=str(Path("config")))
@@ -197,6 +204,12 @@ def build_parser() -> argparse.ArgumentParser:
     diagnostics = subparsers.add_parser("diagnostics")
     diagnostics_sub = diagnostics.add_subparsers(dest="diagnostics_command")
     diagnostics_sub.add_parser("polymarket")
+
+    auth = subparsers.add_parser("auth")
+    auth_sub = auth.add_subparsers(dest="auth_command")
+    auth_set_password = auth_sub.add_parser("set-password")
+    auth_set_password.add_argument("--username", default="osokolin")
+    auth_set_password.add_argument("--password-env", default="BOT_UI_PASSWORD")
 
     watchlist = subparsers.add_parser("watchlist")
     watchlist_sub = watchlist.add_subparsers(dest="watchlist_command")
@@ -417,6 +430,15 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "config" and args.config_command == "validate":
             print(f"config valid mode={settings.mode.value} profile={args.profile}")
+            return 0
+        if args.command == "auth" and args.auth_command == "set-password":
+            if container.web_auth_service is None:
+                raise ValueError("Web auth service is not configured")
+            user = container.web_auth_service.set_password(
+                args.username,
+                _require_password_from_env(args.password_env),
+            )
+            print(f"password updated username={user.username}")
             return 0
         if args.command == "proposals" and args.proposals_command == "list":
             proposal_service.expire_stale()
