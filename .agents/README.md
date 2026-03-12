@@ -22,6 +22,9 @@ This project uses a structured multi-agent workflow.
 8. Keep external API logic in adapters.
 9. Fail closed on stale, malformed, or unavailable external data.
 10. Do not commit unless tests, review, and security gates pass.
+11. Architecture guardrails are defined in: - `.agents/architecture-guardrails.md`
+
+These rules are binding for all agents.
 
 ## Preferred verification scripts
 

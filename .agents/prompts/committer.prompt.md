@@ -5,6 +5,7 @@ Read first:
 - .agents/shared-context.md
 - .agents/gates.md
 - .agents/committer.md
+- .agents/architecture-guardrails.md
 
 Your task:
 Create a commit only if all gates are green.

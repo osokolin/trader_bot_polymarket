@@ -5,6 +5,7 @@ Read first:
 - .agents/shared-context.md
 - .agents/gates.md
 - .agents/planner.md
+- .agents/architecture-guardrails.md
 
 Your task:
 Propose exactly one small next milestone.

@@ -17,6 +17,7 @@ For detailed role definitions and workflows, see:
 - `.agents/workflows/next-step.md`
 - `.agents/workflows/fix-pass.md`
 - `.agents/workflows/release-pass.md`
+- `.agents/architecture-guardrails.md`
 
 ## Default agent flow
 
@@ -33,6 +34,7 @@ Planner → Architect → Implementer → Tester → Reviewer → Security → C
 7. Keep external API logic in adapters.
 8. Fail closed on stale, malformed, or unavailable external data.
 9. Do not commit unless tests, review, and security gates pass.
+10. All agents must treat `.agents/architecture-guardrails.md` as binding.
 
 ## Verification scripts
 

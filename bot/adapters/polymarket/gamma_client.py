@@ -110,6 +110,14 @@ class GammaApiClient:
             raise PolymarketParseError("Unexpected Gamma events response shape")
         return payload
 
+    def probe(self) -> dict[str, object]:
+        payload = self._get_json("/markets", params={"limit": 1, "active": "true", "closed": "false"})
+        if isinstance(payload, list):
+            return {"status": "ok", "items": len(payload)}
+        if isinstance(payload, dict):
+            return {"status": "ok", "shape": "dict"}
+        raise PolymarketParseError("Unexpected Gamma probe response shape")
+
     def close(self) -> None:
         self.http_client.close()
 

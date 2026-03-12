@@ -5,6 +5,7 @@ Read first:
 - .agents/shared-context.md
 - .agents/gates.md
 - .agents/implementer.md
+- .agents/architecture-guardrails.md
 
 Your task:
 Implement only the approved milestone.

@@ -331,6 +331,26 @@ def event_catalog_lines(items) -> list[str]:
     return lines
 
 
+def polymarket_diagnostics_lines(result) -> list[str]:
+    def _fmt(label: str, check) -> str:
+        status = "OK" if check.ok else "FAIL"
+        suffix = "" if check.ok else f" ({check.message})"
+        if check.ok and check.message:
+            suffix = f" ({check.message})"
+        return f"{label:<20} {status}{suffix}"
+
+    return [
+        "Polymarket diagnostics",
+        "",
+        _fmt("Gamma API ..........", result.gamma),
+        _fmt("CLOB REST ..........", result.clob_rest),
+        _fmt("WebSocket ..........", result.websocket),
+        _fmt("Database ...........", result.database),
+        "",
+        f"Overall status ..... {'OK' if result.overall_ok else 'FAIL'}",
+    ]
+
+
 def alert_lines(alerts) -> list[str]:
     lines = [f"alert_count: {len(alerts)}"]
     for alert in alerts:

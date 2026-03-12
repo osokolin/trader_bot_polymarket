@@ -55,6 +55,17 @@ class ClobMarketDataClient:
             raise PolymarketParseError("Unexpected price response shape")
         return payload
 
+    def probe(self) -> dict[str, object]:
+        try:
+            response = self.http_client.get(self.base_url, timeout=self.timeout_seconds)
+        except httpx.TimeoutException as exc:
+            raise PolymarketTransportError(f"Timeout fetching {self.base_url}") from exc
+        except httpx.HTTPError as exc:
+            raise PolymarketTransportError(f"Transport error fetching {self.base_url}") from exc
+        if response.status_code >= 500:
+            raise PolymarketHTTPError(f"HTTP error fetching {self.base_url}: {response.status_code}")
+        return {"status": "ok", "status_code": response.status_code}
+
     def close(self) -> None:
         self.http_client.close()
 

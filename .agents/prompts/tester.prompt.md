@@ -5,6 +5,7 @@ Read first:
 - .agents/shared-context.md
 - .agents/gates.md
 - .agents/tester.md
+- .agents/architecture-guardrails.md
 
 Your task:
 Run verification exactly and report pass/fail honestly.

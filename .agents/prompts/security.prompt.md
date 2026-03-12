@@ -5,6 +5,7 @@ Read first:
 - .agents/shared-context.md
 - .agents/gates.md
 - .agents/security.md
+- .agents/architecture-guardrails.md
 
 Your task:
 Review the current change for execution and API safety.
