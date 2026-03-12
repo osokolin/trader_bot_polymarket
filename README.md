@@ -186,6 +186,33 @@ This integration does not enable live trading:
 - no user channel
 - live execution remains disabled
 
+## Diagnostics
+
+Use the read-only Polymarket connectivity diagnostics command to verify operator setup:
+
+```bash
+.venv/bin/bot diagnostics polymarket
+```
+
+It checks:
+- Gamma API reachability
+- CLOB REST reachability
+- public market WebSocket handshake smoke
+- resolved SQLite database configuration and connectivity
+
+Example output:
+
+```text
+Polymarket diagnostics
+
+Gamma API .......... OK (reachable)
+CLOB REST .......... OK (reachable)
+WebSocket .......... FAIL (timeout)
+Database ........... OK (sqlite ready)
+
+Overall status ..... FAIL
+```
+
 ## Testing
 
 Run the test suite:

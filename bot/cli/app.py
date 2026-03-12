@@ -30,6 +30,7 @@ from bot.cli.presenter import (
     list_header_lines,
     market_catalog_lines,
     proposal_detail_lines,
+    polymarket_diagnostics_lines,
     probability_drift_lines,
     proposal_summary_line,
     probability_snapshot_lines,
@@ -51,6 +52,7 @@ from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService
 from bot.services.approval_snapshot_provider import PolymarketApprovalSnapshotProvider
 from bot.services.market_catalog import MarketCatalogService
+from bot.services.polymarket_diagnostics import PolymarketDiagnosticsService
 from bot.services.market_sync import LiveMarketDataService
 from bot.services.realtime_market_feed import RealtimeMarketFeedService
 from bot.services.outcome_analysis import OutcomeAnalysisService
@@ -216,6 +218,10 @@ def build_parser() -> argparse.ArgumentParser:
     session_summary = session_sub.add_parser("summary")
     session_summary.add_argument("--since-hours", type=int)
 
+    diagnostics = subparsers.add_parser("diagnostics")
+    diagnostics_sub = diagnostics.add_subparsers(dest="diagnostics_command")
+    diagnostics_sub.add_parser("polymarket")
+
     watchlist = subparsers.add_parser("watchlist")
     watchlist_sub = watchlist.add_subparsers(dest="watchlist_command")
     watchlist_add = watchlist_sub.add_parser("add")
@@ -353,6 +359,20 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
     settings = load_settings(Path(args.config_dir), profile=args.profile)
+    if args.command == "diagnostics" and args.diagnostics_command == "polymarket":
+        client = PolymarketClient()
+        gamma_client = GammaApiClient()
+        try:
+            diagnostics_service = PolymarketDiagnosticsService(
+                gamma_client=gamma_client,
+                clob_client=ClobMarketDataClient(http_client=client.http_client),
+                websocket_client=PublicMarketWebSocketClient(),
+            )
+            _print_lines(polymarket_diagnostics_lines(diagnostics_service.run()))
+            return 0
+        finally:
+            gamma_client.close()
+            client.close()
     database = Database(_resolve_database_path())
     database.initialize()
     client = PolymarketClient()

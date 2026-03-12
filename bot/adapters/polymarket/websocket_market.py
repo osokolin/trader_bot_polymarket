@@ -74,6 +74,24 @@ class PublicMarketWebSocketClient:
                     raise PolymarketTransportError("WebSocket market stream unavailable after reconnect attempts") from exc
                 await self.sleep_func(self.base_backoff_seconds * (2 ** (attempts - 1)))
 
+    async def smoke_check(self, asset_ids: list[str] | None = None) -> dict[str, object]:
+        subscription_asset_ids = asset_ids or ["diagnostic_asset"]
+        connector = self._resolve_connector()
+        try:
+            connection = connector(self.websocket_url)
+            if inspect.isawaitable(connection):
+                connection = await connection
+            async with connection as websocket:
+                await websocket.send(json.dumps({"asset_ids": subscription_asset_ids, "type": "market"}))
+                try:
+                    raw_message = await asyncio.wait_for(websocket.recv(), timeout=self.recv_timeout_seconds)
+                except asyncio.TimeoutError as exc:
+                    raise PolymarketWebSocketError("Market WebSocket smoke check timed out") from exc
+                parsed = self._parse_message(raw_message)
+                return {"status": "ok", "update_count": len(parsed)}
+        except ModuleNotFoundError as exc:
+            raise PolymarketWebSocketError("websockets package is required for market WebSocket streaming") from exc
+
     def _resolve_connector(self) -> WebSocketConnector:
         if self.connector is not None:
             return self.connector
