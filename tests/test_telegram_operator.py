@@ -12,12 +12,25 @@ from unittest.mock import patch
 from bot.cli.app import main
 from bot.config.loader import load_settings
 from bot.domain.decisions import PolicyDecision
-from bot.domain.enums import AlertSeverity, AlertState, AlertType, ProposalStatus, SourceType, TradeAction, WatchTargetType
+from bot.domain.enums import (
+    AlertSeverity,
+    AlertState,
+    AlertType,
+    OperatorActionEntityType,
+    OperatorActionRequestStatus,
+    OperatorActionRequestType,
+    ProposalStatus,
+    SourceType,
+    TradeAction,
+    WatchTargetType,
+)
 from bot.domain.models import Market, OperatorAlert, OpportunityCandidate, ProbabilityEstimate, TradeProposal
 from bot.services.audit_log import AuditLogService
+from bot.services.decision_inbox import DecisionInboxService
 from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_pipeline import ExecutionPipelineService
 from bot.services.market_data import RevalidationSnapshot
+from bot.services.operator_notifications import OperatorNotificationsService
 from bot.services.proposal_engine import ProposalEngine
 from bot.services.proposal_lifecycle import ProposalLifecycleService
 from bot.services.polymarket_diagnostics import DiagnosticCheckResult, PolymarketDiagnosticsResult
@@ -25,10 +38,13 @@ from bot.services.telegram_operator_service import TelegramNotification, Telegra
 from bot.storage.db import Database
 from bot.storage.repositories import (
     AuditRepository,
+    AlertRepository,
     DecisionReviewRepository,
+    OperatorActionRequestRepository,
     OrderIntentRepository,
     ProbabilitySnapshotRepository,
     ProposalRepository,
+    WatchlistRepository,
 )
 from bot.telegram import formatter
 from bot.telegram.auth import TelegramOperatorAuth
@@ -56,6 +72,7 @@ class _FakeTelegramOperatorService:
         self.rejected: list[tuple[str, int]] = []
         self.cancelled: list[tuple[str, int]] = []
         self.analysis_requested: list[tuple[str, int]] = []
+        self.request_actions: list[tuple[str, str, int]] = []
 
     def get_status(self):
         return {
@@ -110,6 +127,42 @@ class _FakeTelegramOperatorService:
         if proposal_id != "proposal_91af":
             raise ValueError("Unknown proposal")
         return _build_proposal()
+
+    def list_inbox(self, limit: int = 10):
+        now = utc_now()
+        return [
+            type(
+                "Request",
+                (),
+                {
+                    "request_id": "req_91af",
+                    "request_type": OperatorActionRequestType.PROPOSAL_REVIEW_REQUEST,
+                    "entity_type": OperatorActionEntityType.PROPOSAL,
+                    "entity_id": "proposal_91af",
+                    "status": OperatorActionRequestStatus.OPEN,
+                    "title": "Proposal Review Request",
+                    "summary": "Inflation above 4% in 2025 | edge=+0.0700 conf=0.73",
+                    "payload": {"proposal_id": "proposal_91af", "market_title": "Inflation above 4% in 2025"},
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )()
+        ][:limit]
+
+    def get_request_details(self, request_id: str):
+        if request_id != "req_91af":
+            raise ValueError("Unknown request")
+        return type(
+            "RequestView",
+            (),
+            {
+                "request": self.list_inbox()[0],
+                "proposal": _build_proposal(),
+                "alert": None,
+                "diagnostics_label": None,
+                "diagnostics_check": None,
+            },
+        )()
 
     def list_alerts(self, limit: int = 5):
         return [
@@ -195,6 +248,48 @@ class _FakeTelegramOperatorService:
             },
         )()
 
+    def apply_request_action(self, request_id: str, action: str, chat_id: int):
+        self.request_actions.append((request_id, action, chat_id))
+        request = self.list_inbox()[0]
+        if action == "analysis":
+            return type(
+                "RequestActionResult",
+                (),
+                {
+                    "request": request,
+                    "action": action,
+                    "proposal": _build_proposal(),
+                    "alert": None,
+                    "decision_review": self.request_additional_analysis("proposal_91af", chat_id).decision_review,
+                    "diagnostics_result": None,
+                },
+            )()
+        if action == "acknowledge":
+            return type(
+                "RequestActionResult",
+                (),
+                {
+                    "request": request,
+                    "action": action,
+                    "proposal": None,
+                    "alert": self.list_alerts()[0],
+                    "decision_review": None,
+                    "diagnostics_result": None,
+                },
+            )()
+        return type(
+            "RequestActionResult",
+            (),
+            {
+                "request": request,
+                "action": action,
+                "proposal": _build_proposal(),
+                "alert": None,
+                "decision_review": None,
+                "diagnostics_result": self.get_diagnostics() if action == "refresh" else None,
+            },
+        )()
+
 
 class _FakeTelegramClient:
     def __init__(self, updates=None) -> None:
@@ -271,6 +366,15 @@ class TelegramOperatorTest(unittest.TestCase):
         self.assertIn("Scanner results", replies[0].text)
         self.assertIn("Inflation above 4% in 2025", replies[0].text)
 
+    def test_inbox_and_request_commands_render_request_cards(self) -> None:
+        service = _FakeTelegramOperatorService()
+        router = TelegramRouter(TelegramOperatorAuth({123}), service)  # type: ignore[arg-type]
+        inbox = router.handle_update({"message": {"chat": {"id": 123}, "text": "/inbox"}})[0]
+        request = router.handle_update({"message": {"chat": {"id": 123}, "text": "/request req_91af"}})[0]
+        self.assertIn("Decision Inbox", inbox.text)
+        self.assertIn("req_91af", request.text)
+        self.assertIsNotNone(request.reply_markup)
+
     def test_proposals_and_proposal_detail_commands(self) -> None:
         service = _FakeTelegramOperatorService()
         router = TelegramRouter(TelegramOperatorAuth({123}), service)  # type: ignore[arg-type]
@@ -306,6 +410,16 @@ class TelegramOperatorTest(unittest.TestCase):
     def test_callback_actions_and_unauthorized_rejection(self) -> None:
         service = _FakeTelegramOperatorService()
         router = TelegramRouter(TelegramOperatorAuth({123}), service)  # type: ignore[arg-type]
+        request_replies = router.handle_update(
+            {
+                "callback_query": {
+                    "id": "cb_req",
+                    "data": "request:approve:req_91af",
+                    "message": {"chat": {"id": 123}},
+                }
+            }
+        )
+        self.assertIn("Request approved", request_replies[0].text)
         replies = router.handle_update(
             {
                 "callback_query": {
@@ -317,6 +431,7 @@ class TelegramOperatorTest(unittest.TestCase):
         )
         self.assertIn("Proposal approved", replies[0].text)
         self.assertEqual(replies[0].callback_query_id, "cb_1")
+        self.assertEqual(service.request_actions, [("req_91af", "approve", 123)])
         unauthorized = router.handle_update(
             {
                 "callback_query": {
@@ -394,6 +509,8 @@ class TelegramOperatorTest(unittest.TestCase):
         proposal = _build_proposal()
         self.assertIn("Proposal approved", formatter.proposal_action_message("approve", proposal))
         self.assertIn("Additional Analysis", formatter.proposal_analysis_message(_FakeTelegramOperatorService().request_additional_analysis(proposal.proposal_id, 123)))
+        self.assertIn("Decision Inbox", formatter.inbox_message(_FakeTelegramOperatorService().list_inbox()))
+        self.assertIn("Request ID: req_91af", formatter.request_message(_FakeTelegramOperatorService().get_request_details("req_91af")))
 
     def test_cli_telegram_serve_wiring(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -432,6 +549,16 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
                 data_age_seconds=3,
             )
 
+    class _FakeDiagnosticsService:
+        def run(self):
+            return PolymarketDiagnosticsResult(
+                gamma=DiagnosticCheckResult(False, "timeout"),
+                clob_rest=DiagnosticCheckResult(True, "reachable"),
+                websocket=DiagnosticCheckResult(True, "reachable"),
+                database=DiagnosticCheckResult(True, "sqlite ready"),
+                overall_ok=False,
+            )
+
     def setUp(self) -> None:
         self.settings = load_settings(Path("config"))
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -462,6 +589,12 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
             source_types=[SourceType.MAJOR_MEDIA],
         )
         self.execution_adapter = _FakeExecutionAdapter()
+        self.notifications_service = OperatorNotificationsService(
+            WatchlistRepository(self.connection),
+            AlertRepository(self.connection),
+            self.proposal_repository,
+            OrderIntentRepository(self.connection),
+        )
         self.proposal_service = ProposalLifecycleService(
             self.proposal_repository,
             AuditLogService(self.audit_repository),
@@ -481,15 +614,25 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
             self.execution_service,
             DecisionReviewRepository(self.connection),
         )
+        self.decision_inbox_service = DecisionInboxService(
+            settings=self.settings,
+            repository=OperatorActionRequestRepository(self.connection),
+            audit_log=AuditLogService(self.audit_repository),
+            proposal_service=self.proposal_service,
+            decision_review_service=self.decision_review_service,
+            notifications_service=self.notifications_service,
+            diagnostics_service=self._FakeDiagnosticsService(),
+        )
         self.operator_service = TelegramOperatorService(
             settings=self.settings,
             profile="balanced",
             execution_adapter=self.execution_adapter,
             proposal_service=self.proposal_service,
             decision_review_service=self.decision_review_service,
-            notifications_service=type("Notifications", (), {"list_alerts": lambda *args, **kwargs: []})(),
+            decision_inbox_service=self.decision_inbox_service,
+            notifications_service=self.notifications_service,
             scanner_service=type("Scanner", (), {"scan": lambda *args, **kwargs: None})(),
-            diagnostics_service=type("Diagnostics", (), {"run": lambda *args, **kwargs: None})(),
+            diagnostics_service=self._FakeDiagnosticsService(),
         )
 
     def _create_proposal(self) -> TradeProposal:
@@ -498,13 +641,17 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
 
     def test_approve_records_telegram_audit_metadata_and_does_not_trigger_execution(self) -> None:
         proposal = self._create_proposal()
-        approved = self.operator_service.approve_proposal(proposal.proposal_id, chat_id=777)
+        request = self.decision_inbox_service.create_proposal_review_request(proposal)
+        result = self.operator_service.apply_request_action(request.request_id, "approve", chat_id=777)
+        approved = result.proposal
+        self.assertIsNotNone(approved)
         self.assertEqual(approved.status, ProposalStatus.APPROVED)
         self.assertEqual(self.execution_adapter.submit_calls, 0)
         reviews = self.proposal_service.list_review_history(proposal.proposal_id)
         self.assertEqual(reviews[0]["action"], "approve")
         self.assertIn('"source": "telegram"', reviews[0]["payload_json"])
         self.assertIn('"chat_id": 777', reviews[0]["payload_json"])
+        self.assertIn(f'"request_id": "{request.request_id}"', reviews[0]["payload_json"])
         audits = self.proposal_service.list_audit_history(proposal.proposal_id)
         self.assertEqual(audits[0]["event_type"], "proposal_approved_manually")
         self.assertIn('"source": "telegram"', audits[0]["payload_json"])
@@ -512,28 +659,23 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
 
     def test_invalid_transition_returns_readable_message(self) -> None:
         proposal = self._create_proposal()
-        self.operator_service.reject_proposal(proposal.proposal_id, chat_id=777)
+        request = self.decision_inbox_service.create_proposal_review_request(proposal)
+        self.operator_service.apply_request_action(request.request_id, "reject", chat_id=777)
         router = TelegramRouter(TelegramOperatorAuth({777}), self.operator_service)
-        replies = router.handle_update({"message": {"chat": {"id": 777}, "text": f"/approve {proposal.proposal_id}"}})
+        replies = router.handle_update({"message": {"chat": {"id": 777}, "text": f"/approve {request.request_id}"}})
         self.assertIn("Command failed:", replies[0].text)
         self.assertIn("can no longer be approved", replies[0].text.lower())
         self.assertNotIn("Traceback", replies[0].text)
 
     def test_request_analysis_records_review_metadata(self) -> None:
         proposal = self._create_proposal()
-        self.proposal_service.approve(
-            self.settings,
-            proposal.proposal_id,
-            actor="system",
-            open_positions=0,
-            unresolved_exposure_usd=0.0,
-            theme_exposure_usd=0.0,
-        )
-        analysis = self.operator_service.request_additional_analysis(proposal.proposal_id, chat_id=555)
-        self.assertEqual(analysis.scanner_rationale, "edge detected")
+        request = self.decision_inbox_service.create_proposal_review_request(proposal)
+        result = self.operator_service.apply_request_action(request.request_id, "analysis", chat_id=555)
+        self.assertEqual(result.request.status.value, "acknowledged")
         reviews = self.proposal_service.list_review_history(proposal.proposal_id)
         self.assertEqual(reviews[0]["action"], "request_analysis")
         self.assertIn('"action": "analysis"', reviews[0]["payload_json"])
+        self.assertIn(f'"request_id": "{request.request_id}"', reviews[0]["payload_json"])
 
 
 if __name__ == "__main__":

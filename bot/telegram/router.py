@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from bot.telegram import formatter
-from bot.telegram.actions import parse_callback
+from bot.telegram.actions import parse_callback, parse_request_callback
 from bot.telegram.auth import TelegramOperatorAuth
 from bot.services.telegram_operator_service import TelegramOperatorService
 
@@ -53,6 +53,17 @@ class TelegramRouter:
             return TelegramOutboundMessage(chat_id, formatter.diagnostics_message(self.operator_service.get_diagnostics()))
         if command == "/scan":
             return TelegramOutboundMessage(chat_id, formatter.scan_message(self.operator_service.get_scanner_results()))
+        if command == "/inbox":
+            return TelegramOutboundMessage(chat_id, formatter.inbox_message(self.operator_service.list_inbox()))
+        if command == "/request":
+            if len(parts) < 2:
+                raise ValueError("Usage: /request <id>")
+            view = self.operator_service.get_request_details(parts[1])
+            return TelegramOutboundMessage(
+                chat_id,
+                formatter.request_message(view),
+                reply_markup=formatter.request_actions_markup(view.request),
+            )
         if command == "/proposals":
             return TelegramOutboundMessage(chat_id, formatter.proposals_message(self.operator_service.list_proposals()))
         if command == "/proposal":
@@ -67,21 +78,60 @@ class TelegramRouter:
         if command == "/approve":
             if len(parts) < 2:
                 raise ValueError("Usage: /approve <id>")
+            if parts[1].startswith("req_"):
+                result = self.operator_service.apply_request_action(parts[1], "approve", chat_id)
+                return TelegramOutboundMessage(
+                    chat_id,
+                    formatter.request_action_message(result),
+                    reply_markup=formatter.request_actions_markup(result.request),
+                )
             proposal = self.operator_service.approve_proposal(parts[1], chat_id)
             return TelegramOutboundMessage(chat_id, formatter.proposal_action_message("approve", proposal))
         if command == "/reject":
             if len(parts) < 2:
                 raise ValueError("Usage: /reject <id>")
+            if parts[1].startswith("req_"):
+                result = self.operator_service.apply_request_action(parts[1], "reject", chat_id)
+                return TelegramOutboundMessage(
+                    chat_id,
+                    formatter.request_action_message(result),
+                    reply_markup=formatter.request_actions_markup(result.request),
+                )
             proposal = self.operator_service.reject_proposal(parts[1], chat_id)
             return TelegramOutboundMessage(chat_id, formatter.proposal_action_message("reject", proposal))
         if command == "/cancel":
             if len(parts) < 2:
                 raise ValueError("Usage: /cancel <id>")
+            if parts[1].startswith("req_"):
+                result = self.operator_service.apply_request_action(parts[1], "cancel", chat_id)
+                return TelegramOutboundMessage(
+                    chat_id,
+                    formatter.request_action_message(result),
+                    reply_markup=formatter.request_actions_markup(result.request),
+                )
             proposal = self.operator_service.cancel_proposal(parts[1], chat_id)
             return TelegramOutboundMessage(chat_id, formatter.proposal_action_message("cancel", proposal))
         if command == "/analysis":
             if len(parts) < 2:
                 raise ValueError("Usage: /analysis <id>")
+            if parts[1].startswith("req_"):
+                result = self.operator_service.apply_request_action(parts[1], "analysis", chat_id)
+                if result.decision_review is None or result.proposal is None:
+                    raise ValueError("Additional analysis unavailable")
+                analysis = type(
+                    "InboxAnalysis",
+                    (),
+                    {
+                        "proposal": result.proposal,
+                        "decision_review": result.decision_review,
+                        "scanner_rationale": result.request.payload.get("market_title", "Request analysis"),
+                    },
+                )()
+                return TelegramOutboundMessage(
+                    chat_id,
+                    formatter.proposal_analysis_message(analysis),
+                    reply_markup=formatter.request_actions_markup(result.request),
+                )
             return TelegramOutboundMessage(
                 chat_id,
                 formatter.proposal_analysis_message(self.operator_service.request_additional_analysis(parts[1], chat_id)),
@@ -102,6 +152,55 @@ class TelegramRouter:
         chat_id = int(chat["id"])
         if not self.auth.is_allowed(chat_id):
             return [TelegramOutboundMessage(chat_id, formatter.unauthorized_message(), callback_query_id=callback_id)]
+        parsed_request = parse_request_callback(data)
+        if parsed_request is not None:
+            action, request_id = parsed_request
+            try:
+                if action == "details":
+                    view = self.operator_service.get_request_details(request_id)
+                    return [
+                        TelegramOutboundMessage(
+                            chat_id,
+                            formatter.request_message(view),
+                            reply_markup=formatter.request_actions_markup(view.request),
+                            callback_query_id=callback_id,
+                        )
+                    ]
+                result = self.operator_service.apply_request_action(request_id, action, chat_id)
+                if action == "analysis" and result.decision_review is not None and result.proposal is not None:
+                    analysis = type(
+                        "InboxAnalysis",
+                        (),
+                        {
+                            "proposal": result.proposal,
+                            "decision_review": result.decision_review,
+                            "scanner_rationale": result.request.payload.get("market_title", "Request analysis"),
+                        },
+                    )()
+                    return [
+                        TelegramOutboundMessage(
+                            chat_id,
+                            formatter.proposal_analysis_message(analysis),
+                            reply_markup=formatter.request_actions_markup(result.request),
+                            callback_query_id=callback_id,
+                        )
+                    ]
+                return [
+                    TelegramOutboundMessage(
+                        chat_id,
+                        formatter.request_action_message(result),
+                        reply_markup=formatter.request_actions_markup(result.request),
+                        callback_query_id=callback_id,
+                    )
+                ]
+            except Exception as exc:
+                return [
+                    TelegramOutboundMessage(
+                        chat_id,
+                        formatter.command_error_message(exc),
+                        callback_query_id=callback_id,
+                    )
+                ]
         parsed = parse_callback(data)
         if parsed is None:
             return [TelegramOutboundMessage(chat_id, formatter.help_message(), callback_query_id=callback_id)]

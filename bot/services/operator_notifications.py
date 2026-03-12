@@ -60,6 +60,12 @@ class OperatorNotificationsService:
     def list_alerts_for_entity(self, entity_type: WatchTargetType, entity_id: str) -> list[OperatorAlert]:
         return self.alert_repository.list_for_entity(entity_type, entity_id)
 
+    def get_alert(self, alert_id: str) -> OperatorAlert:
+        alert = self.alert_repository.get(alert_id)
+        if alert is None:
+            raise ValueError(f"Unknown alert: {alert_id}")
+        return alert
+
     def acknowledge_alert(self, alert_id: str) -> OperatorAlert:
         return self._transition_alert(alert_id, AlertState.ACKNOWLEDGED)
 

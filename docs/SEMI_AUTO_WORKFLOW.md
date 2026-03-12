@@ -36,6 +36,7 @@ At the current milestone depth:
 30. `bot markets scan` provides a read-only market opportunity scan over active markets, using cached-or-live market pricing plus a deterministic scanner fair-value heuristic, with filtering by absolute edge magnitude, liquidity, and result limit.
 31. `bot markets draft-opportunities` can convert scanner results into safe draft proposals through the existing proposal lifecycle, while deduping against active proposals for the same market and leaving approval, intent creation, and execution unchanged.
 32. `bot telegram serve` exposes an allowlisted Telegram operator inbox with concise status/diagnostics/scanner/proposal/alert commands, notification polling for new draft proposals, new open alerts, and diagnostics failures, plus safe proposal actions for approve/reject/cancel/request-analysis through the existing lifecycle services.
+33. A persisted Decision Inbox now tracks operator action requests for proposal review, alert notifications, and diagnostics issues; Telegram exposes those requests through `/inbox`, `/request <id>`, and request-scoped action cards that resolve through the decision inbox service before delegating to lifecycle or alert services.
 
 Execution adapters remain non-autonomous; approval currently stops at a verified `approved` state.
 When a live order book is available, approval revalidation uses fresh public market metadata plus fresh CLOB `/book` and `/midpoint` pricing, and `current_price` currently uses the midpoint as a temporary execution-price proxy.
@@ -44,6 +45,7 @@ If live market data is stale, malformed, or unavailable, approval fails closed a
 Live execution remains disabled; `semi_auto` still requires manual approval and blocks autonomous order submission.
 Public market-data integration does not include authenticated trading, order posting, or the Polymarket user channel.
 Telegram proposal actions remain lifecycle-bound and execution-safe: they may approve, reject, cancel, or request additional analysis for proposals, but they do not create intents, submit orders, simulate execution, or mutate runtime mode/configuration.
+Telegram decision cards are now request-based: proposal, alert, and diagnostics actions are scoped to persisted `request_id` records, preserving server-side auditability and keeping Telegram as a thin operator surface.
 Operator inspection paths are cache-first by default. The UI live-market page and `bot markets live <market_id>` prefer the latest cached snapshot and only refresh externally when the operator asks for it.
 Paper execution uses a deterministic dry-run adapter and writes simulated execution details to review and audit trails.
 Terminal simulated intents are not re-simulated; operators must create a new intent if they need another scenario run.
