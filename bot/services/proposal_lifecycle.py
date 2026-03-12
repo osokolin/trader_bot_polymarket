@@ -74,6 +74,13 @@ class ProposalLifecycleService:
     def list_approved_proposals(self) -> list[TradeProposal]:
         return self.proposal_repository.list_by_statuses([ProposalStatus.APPROVED])
 
+    def latest_active_proposal_for_market(self, market_id: str) -> TradeProposal | None:
+        proposals = self.proposal_repository.list_for_market(market_id)
+        for proposal in proposals:
+            if proposal.status in {ProposalStatus.PENDING_MANUAL_CONFIRMATION, ProposalStatus.APPROVED}:
+                return proposal
+        return None
+
     def latest_proposal_state(self, proposal_id: str) -> TradeProposal:
         proposal = self.proposal_repository.latest_state(proposal_id)
         if proposal is None:

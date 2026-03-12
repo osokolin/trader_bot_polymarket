@@ -30,6 +30,7 @@ from bot.cli.presenter import (
     list_header_lines,
     market_catalog_lines,
     market_opportunity_lines,
+    opportunity_draft_lines,
     proposal_detail_lines,
     polymarket_diagnostics_lines,
     probability_drift_lines,
@@ -54,6 +55,7 @@ from bot.services.execution_pipeline import ExecutionPipelineService
 from bot.services.approval_snapshot_provider import PolymarketApprovalSnapshotProvider
 from bot.services.market_catalog import MarketCatalogService
 from bot.services.market_opportunity_scanner import MarketOpportunityScannerService
+from bot.services.opportunity_proposal_bridge import OpportunityProposalBridgeService
 from bot.services.polymarket_diagnostics import PolymarketDiagnosticsService
 from bot.services.market_sync import LiveMarketDataService
 from bot.services.realtime_market_feed import RealtimeMarketFeedService
@@ -269,6 +271,10 @@ def build_parser() -> argparse.ArgumentParser:
     market_scan.add_argument("--min-edge", type=float)
     market_scan.add_argument("--min-liquidity", type=float)
     market_scan.add_argument("--limit", type=int, default=20)
+    market_draft = markets_sub.add_parser("draft-opportunities")
+    market_draft.add_argument("--min-edge", type=float)
+    market_draft.add_argument("--min-liquidity", type=float)
+    market_draft.add_argument("--limit", type=int, default=20)
     market_cache = markets_sub.add_parser("cache")
     market_cache.add_argument("id")
     market_stream = markets_sub.add_parser("stream-once")
@@ -409,6 +415,10 @@ def main(argv: list[str] | None = None) -> int:
                     EdgeAdjustedProbabilityProvider(),
                 ),
                 probability_snapshot_repository=ProbabilitySnapshotRepository(connection),
+            )
+            opportunity_bridge_service = OpportunityProposalBridgeService(
+                scanner_service=market_opportunity_scanner,
+                proposal_service=proposal_service,
             )
             notifications_service = OperatorNotificationsService(
                 WatchlistRepository(connection),
@@ -723,6 +733,18 @@ def main(argv: list[str] | None = None) -> int:
                 _print_lines(
                     market_opportunity_lines(
                         market_opportunity_scanner.scan(
+                            settings,
+                            min_edge=args.min_edge,
+                            min_liquidity=args.min_liquidity,
+                            limit=args.limit,
+                        )
+                    )
+                )
+                return 0
+            if args.command == "markets" and args.markets_command == "draft-opportunities":
+                _print_lines(
+                    opportunity_draft_lines(
+                        opportunity_bridge_service.draft_opportunities(
                             settings,
                             min_edge=args.min_edge,
                             min_liquidity=args.min_liquidity,

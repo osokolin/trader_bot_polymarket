@@ -53,7 +53,7 @@ class MarketOpportunityScannerService:
                 warning_messages.append(f"{item.market_id}: {exc}")
                 continue
 
-            probability = self._estimate_probability(snapshot)
+            probability = self.estimate_probability(snapshot)
             edge = round(probability.fair_probability - snapshot.orderbook.midpoint, 4)
             if abs(edge) < edge_threshold:
                 continue
@@ -80,7 +80,7 @@ class MarketOpportunityScannerService:
             warning_messages=warning_messages,
         )
 
-    def _estimate_probability(self, snapshot) -> ProbabilityEstimate:
+    def estimate_probability(self, snapshot) -> ProbabilityEstimate:
         market_price = snapshot.orderbook.midpoint
         reference_price = snapshot.reference_price if snapshot.reference_price is not None else market_price
         fair_probability = clamp(round((market_price + reference_price) / 2, 4), 0.0, 1.0)
