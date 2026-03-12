@@ -130,6 +130,35 @@ CREATE TABLE IF NOT EXISTS operator_alerts (
     resolved_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS operator_action_requests (
+    request_id TEXT PRIMARY KEY,
+    request_type TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    title TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    actioned_at TEXT,
+    actioned_by TEXT,
+    source TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_operator_action_requests_status_updated
+ON operator_action_requests(status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS operator_action_request_records (
+    record_id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    result TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS probability_snapshots (
     snapshot_id TEXT PRIMARY KEY,
     market_id TEXT NOT NULL,

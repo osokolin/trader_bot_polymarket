@@ -9,6 +9,9 @@ from bot.domain.enums import (
     AlertSeverity,
     AlertType,
     IntentStatus,
+    OperatorActionEntityType,
+    OperatorActionRequestStatus,
+    OperatorActionRequestType,
     ProposalStatus,
     PositionStatus,
     SourceType,
@@ -452,4 +455,32 @@ class SavedView:
     name: str
     kind: str
     params: dict[str, object]
+    created_at: datetime
+
+
+@dataclass(slots=True)
+class OperatorActionRequest:
+    request_id: str
+    request_type: OperatorActionRequestType
+    entity_type: OperatorActionEntityType
+    entity_id: str
+    status: OperatorActionRequestStatus
+    title: str
+    summary: str
+    payload: dict[str, object]
+    created_at: datetime
+    updated_at: datetime
+    actioned_at: datetime | None = None
+    actioned_by: str | None = None
+    source: str = "system"
+
+
+@dataclass(slots=True)
+class OperatorActionRequestRecord:
+    record_id: str
+    request_id: str
+    action: str
+    actor: str
+    result: str
+    payload: dict[str, object]
     created_at: datetime

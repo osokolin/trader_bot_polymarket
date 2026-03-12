@@ -5,7 +5,8 @@ from time import monotonic
 
 from bot.config.models import Settings
 from bot.domain.enums import AlertState, ProposalStatus
-from bot.domain.models import DecisionReview, OperatorAlert, TradeProposal
+from bot.domain.models import DecisionReview, OperatorActionRequest, OperatorAlert, TradeProposal
+from bot.services.decision_inbox import DecisionInboxActionResult, DecisionInboxRequestView, DecisionInboxService
 from bot.services.decision_review import DecisionReviewService
 from bot.services.market_opportunity_scanner import MarketOpportunityScannerService
 from bot.services.polymarket_diagnostics import PolymarketDiagnosticsResult, PolymarketDiagnosticsService
@@ -34,6 +35,7 @@ class TelegramOperatorService:
     execution_adapter: object
     proposal_service: ProposalLifecycleService
     decision_review_service: DecisionReviewService
+    decision_inbox_service: DecisionInboxService
     notifications_service: OperatorNotificationsService
     scanner_service: MarketOpportunityScannerService
     diagnostics_service: PolymarketDiagnosticsService
@@ -75,6 +77,24 @@ class TelegramOperatorService:
 
     def get_proposal_details(self, proposal_id: str) -> TradeProposal:
         return self.proposal_service.latest_proposal_state(proposal_id)
+
+    def list_inbox(self, limit: int = 10) -> list[OperatorActionRequest]:
+        return self.decision_inbox_service.list_open_requests(limit=limit)
+
+    def get_request_details(self, request_id: str) -> DecisionInboxRequestView:
+        return self.decision_inbox_service.get_request_view(request_id)
+
+    def apply_request_action(self, request_id: str, action: str, chat_id: int) -> DecisionInboxActionResult:
+        try:
+            return self.decision_inbox_service.apply_action(
+                request_id=request_id,
+                action=action,
+                actor="telegram",
+                source="telegram",
+                chat_id=chat_id,
+            )
+        except ProposalLifecycleError as exc:
+            raise ProposalLifecycleError(self._friendly_transition_message(action, exc)) from exc
 
     def approve_proposal(self, proposal_id: str, chat_id: int) -> TradeProposal:
         try:
@@ -148,18 +168,21 @@ class TelegramOperatorService:
         notifications: list[TelegramNotification] = []
         for proposal in active_proposals:
             if proposal.status == ProposalStatus.PENDING_MANUAL_CONFIRMATION and proposal.proposal_id not in self._seen_proposal_ids:
-                notifications.append(TelegramNotification("draft_proposal", proposal))
+                request = self.decision_inbox_service.create_proposal_review_request(proposal, source="telegram_poll")
+                notifications.append(TelegramNotification("inbox_request", request))
                 self._seen_proposal_ids.add(proposal.proposal_id)
 
         for alert in open_alerts:
             if alert.alert_id not in self._seen_alert_ids:
-                notifications.append(TelegramNotification("alert", alert))
+                request = self.decision_inbox_service.create_alert_request(alert, source="telegram_poll")
+                notifications.append(TelegramNotification("inbox_request", request))
                 self._seen_alert_ids.add(alert.alert_id)
 
         if diagnostics is not None:
+            current_requests = self.decision_inbox_service.create_diagnostics_requests(diagnostics, source="telegram_poll")
             diagnostics_signature = self._diagnostics_signature(diagnostics)
             if diagnostics_signature is not None and diagnostics_signature != self._last_diagnostics_failure:
-                notifications.append(TelegramNotification("diagnostics_failure", diagnostics))
+                notifications.extend(TelegramNotification("inbox_request", item) for item in current_requests)
             self._last_diagnostics_failure = diagnostics_signature
         return notifications
 

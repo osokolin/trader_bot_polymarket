@@ -50,6 +50,7 @@ from bot.domain.enums import AlertState, WatchTargetType
 from bot.services.analytics import AnalyticsService
 from bot.services.audit_log import AuditLogService
 from bot.services.decision_review import DecisionReviewService
+from bot.services.decision_inbox import DecisionInboxService
 from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService
 from bot.services.approval_snapshot_provider import PolymarketApprovalSnapshotProvider
@@ -75,6 +76,7 @@ from bot.storage.repositories import (
     ExecutionEvaluationRepository,
     OutcomeAnalysisRepository,
     MarketDataSnapshotRepository,
+    OperatorActionRequestRepository,
     OrderIntentRepository,
     ProbabilitySnapshotRepository,
     PositionRepository,
@@ -447,6 +449,19 @@ def main(argv: list[str] | None = None) -> int:
                 execution_service,
                 DecisionReviewRepository(connection),
             )
+            decision_inbox_service = DecisionInboxService(
+                settings=settings,
+                repository=OperatorActionRequestRepository(connection),
+                audit_log=AuditLogService(AuditRepository(connection)),
+                proposal_service=proposal_service,
+                decision_review_service=decision_review_service,
+                notifications_service=notifications_service,
+                diagnostics_service=PolymarketDiagnosticsService(
+                    gamma_client=gamma_client,
+                    clob_client=ClobMarketDataClient(http_client=client.http_client),
+                    websocket_client=PublicMarketWebSocketClient(),
+                ),
+            )
             execution_evaluation_service = ExecutionEvaluationService(
                 proposal_service,
                 execution_service,
@@ -473,6 +488,7 @@ def main(argv: list[str] | None = None) -> int:
                 execution_adapter=execution_service.execution_adapter,
                 proposal_service=proposal_service,
                 decision_review_service=decision_review_service,
+                decision_inbox_service=decision_inbox_service,
                 notifications_service=notifications_service,
                 scanner_service=market_opportunity_scanner,
                 diagnostics_service=PolymarketDiagnosticsService(

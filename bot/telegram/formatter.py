@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from bot.domain.enums import ProposalStatus
+from bot.domain.enums import OperatorActionEntityType, OperatorActionRequestStatus, OperatorActionRequestType, ProposalStatus
 from bot.services.telegram_operator_service import TelegramNotification
-from bot.telegram.actions import proposal_callback
+from bot.telegram.actions import proposal_callback, request_callback
 
 
 def unauthorized_message() -> str:
@@ -18,6 +18,8 @@ def help_message() -> str:
         "/status\n"
         "/diagnostics\n"
         "/scan\n"
+        "/inbox\n"
+        "/request <id>\n"
         "/proposals\n"
         "/proposal <id>\n"
         "/approve <id>\n"
@@ -127,6 +129,74 @@ def proposal_analysis_message(analysis) -> str:
     )
 
 
+def inbox_message(requests) -> str:
+    if not requests:
+        return "Decision Inbox\n\nNo open requests."
+    lines = ["Decision Inbox"]
+    for index, request in enumerate(requests, start=1):
+        lines.append(
+            f"{index}. {request.request_type.value} | {request.entity_id} | {request.status.value}"
+        )
+    return "\n".join(lines)
+
+
+def request_message(view) -> str:
+    request = view.request
+    if request.request_type == OperatorActionRequestType.PROPOSAL_REVIEW_REQUEST and view.proposal is not None:
+        proposal = view.proposal
+        return (
+            "Proposal Review Request\n\n"
+            f"Request ID: {request.request_id}\n"
+            f"Proposal ID: {proposal.proposal_id}\n"
+            f"Market: {proposal.market_title}\n"
+            f"Price: {proposal.market_price:.4f}\n"
+            f"Fair probability: {proposal.fair_probability:.4f}\n"
+            f"Edge: {proposal.edge:+.4f}\n"
+            f"Confidence: {proposal.confidence:.2f}\n"
+            f"Status: {request.status.value}"
+        )
+    if request.request_type == OperatorActionRequestType.ALERT_NOTIFICATION and view.alert is not None:
+        return (
+            "Alert Notification\n\n"
+            f"Request ID: {request.request_id}\n"
+            f"Alert ID: {view.alert.alert_id}\n"
+            f"Type: {view.alert.alert_type.value}\n"
+            f"Summary: {view.alert.summary}\n"
+            f"Status: {request.status.value}"
+        )
+    if request.request_type == OperatorActionRequestType.DIAGNOSTICS_ISSUE:
+        detail = request.payload.get("message", "-")
+        return (
+            "Diagnostics Issue\n\n"
+            f"Request ID: {request.request_id}\n"
+            f"Check: {request.entity_id}\n"
+            f"Summary: {detail}\n"
+            f"Status: {request.status.value}"
+        )
+    return (
+        "Decision Request\n\n"
+        f"Request ID: {request.request_id}\n"
+        f"Type: {request.request_type.value}\n"
+        f"Entity: {request.entity_id}\n"
+        f"Status: {request.status.value}"
+    )
+
+
+def request_action_message(result) -> str:
+    action = result.action
+    request = result.request
+    labels = {
+        "approve": "Request approved",
+        "reject": "Request rejected",
+        "cancel": "Request cancelled",
+        "analysis": "Additional analysis ready",
+        "acknowledge": "Alert acknowledged",
+        "refresh": "Diagnostics refreshed",
+        "details": "Request details",
+    }
+    return f"{labels.get(action, action)}\nRequest ID: {request.request_id}"
+
+
 def alerts_message(alerts) -> str:
     if not alerts:
         return "Alerts\n\nNo open alerts."
@@ -156,6 +226,14 @@ def notification_message(notification: TelegramNotification) -> str:
         return f"Alert\n\n{alert.summary}\nType: {alert.alert_type.value}"
     if notification.kind == "diagnostics_failure":
         return f"Diagnostics failure\n\n{diagnostics_message(notification.payload)}"
+    if notification.kind == "inbox_request":
+        return (
+            "Decision Inbox Request\n\n"
+            f"{notification.payload.title}\n"
+            f"Request ID: {notification.payload.request_id}\n"
+            f"Summary: {notification.payload.summary}\n"
+            f"Use /request {notification.payload.request_id} to inspect."
+        )
     return "Unknown notification"
 
 
@@ -186,4 +264,40 @@ def proposal_actions_markup(proposal) -> dict[str, object] | None:
 def notification_markup(notification: TelegramNotification) -> dict[str, object] | None:
     if notification.kind == "draft_proposal":
         return proposal_actions_markup(notification.payload)
+    if notification.kind == "inbox_request":
+        return request_actions_markup(notification.payload)
     return None
+
+
+def request_actions_markup(request) -> dict[str, object] | None:
+    rows: list[list[dict[str, str]]] = []
+    if request.request_type == OperatorActionRequestType.PROPOSAL_REVIEW_REQUEST:
+        if request.status in OperatorActionRequestStatus.active_states():
+            rows.append(
+                [
+                    {"text": "Approve", "callback_data": request_callback("approve", request.request_id)},
+                    {"text": "Reject", "callback_data": request_callback("reject", request.request_id)},
+                    {"text": "Cancel", "callback_data": request_callback("cancel", request.request_id)},
+                ]
+            )
+            rows.append(
+                [
+                    {"text": "More Analysis", "callback_data": request_callback("analysis", request.request_id)},
+                    {"text": "Details", "callback_data": request_callback("details", request.request_id)},
+                ]
+            )
+    elif request.request_type == OperatorActionRequestType.ALERT_NOTIFICATION:
+        rows.append(
+            [
+                {"text": "Acknowledge", "callback_data": request_callback("acknowledge", request.request_id)},
+                {"text": "Details", "callback_data": request_callback("details", request.request_id)},
+            ]
+        )
+    elif request.request_type == OperatorActionRequestType.DIAGNOSTICS_ISSUE:
+        rows.append(
+            [
+                {"text": "Refresh Summary", "callback_data": request_callback("refresh", request.request_id)},
+                {"text": "Details", "callback_data": request_callback("details", request.request_id)},
+            ]
+        )
+    return {"inline_keyboard": rows} if rows else None

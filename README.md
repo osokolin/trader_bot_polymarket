@@ -181,6 +181,8 @@ Supported commands:
 - `/status`
 - `/diagnostics`
 - `/scan`
+- `/inbox`
+- `/request <id>`
 - `/proposals`
 - `/proposal <id>`
 - `/approve <id>`
@@ -193,6 +195,11 @@ Phase 2 adds safe proposal lifecycle actions:
 - allowlisted operators may approve, reject, cancel, and request additional analysis for proposals
 - proposal actions reuse the existing lifecycle and decision-review services
 - inline buttons are included on draft proposal notifications and proposal detail responses
+
+Phase 3 adds a persisted Telegram decision inbox:
+- operator action requests are stored server-side and exposed via `/inbox` and `/request <id>`
+- Telegram inbox cards now target `request_id` values for proposal review, alert acknowledgement, and diagnostics refresh/detail flows
+- proposal actions remain lifecycle-safe and are resolved through the decision inbox service before reaching proposal lifecycle methods
 
 Telegram still remains execution-safe:
 - no intent creation

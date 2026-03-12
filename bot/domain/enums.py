@@ -132,3 +132,29 @@ class AlertState(str, Enum):
     ACKNOWLEDGED = "acknowledged"
     DISMISSED = "dismissed"
     RESOLVED = "resolved"
+
+
+class OperatorActionRequestStatus(str, Enum):
+    OPEN = "open"
+    ACKNOWLEDGED = "acknowledged"
+    ACTIONED = "actioned"
+    EXPIRED = "expired"
+    DISMISSED = "dismissed"
+
+    @classmethod
+    def active_states(cls) -> set["OperatorActionRequestStatus"]:
+        return {cls.OPEN, cls.ACKNOWLEDGED}
+
+
+class OperatorActionRequestType(str, Enum):
+    PROPOSAL_REVIEW_REQUEST = "proposal_review_request"
+    ALERT_NOTIFICATION = "alert_notification"
+    DIAGNOSTICS_ISSUE = "diagnostics_issue"
+    SCANNER_SUMMARY = "scanner_summary"
+
+
+class OperatorActionEntityType(str, Enum):
+    PROPOSAL = "proposal"
+    ALERT = "alert"
+    DIAGNOSTICS = "diagnostics"
+    SCANNER = "scanner"
