@@ -159,6 +159,10 @@ class OperatorUiTest(unittest.TestCase):
                 self.assertIn("Каталог событий", event_catalog)
                 self.assertIn("Macro Calendar", event_catalog)
 
+                _, missing_market_review = app.render_response("/decision-reviews/markets/mkt_missing_snapshot")
+                self.assertIn("Разбор пока недоступен", missing_market_review)
+                self.assertIn("/markets/live/mkt_missing_snapshot", missing_market_review)
+
                 _, views = app.render_response("/views")
                 self.assertIn("Сохраненные виды", views)
                 self.assertIn("approved-proposals", views)

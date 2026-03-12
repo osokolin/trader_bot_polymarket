@@ -25,6 +25,15 @@ def _to_float(value: object, field_name: str) -> float:
 def _parse_datetime(value: str | None) -> datetime:
     if not value:
         raise PolymarketParseError("Missing orderbook timestamp")
+    if value.isdigit():
+        raw = int(value)
+        if raw >= 10**18:
+            raw = raw / 1_000_000_000
+        elif raw >= 10**15:
+            raw = raw / 1_000_000
+        elif raw >= 10**12:
+            raw = raw / 1_000
+        return datetime.fromtimestamp(raw, tz=timezone.utc)
     if value.endswith("Z"):
         value = value.replace("Z", "+00:00")
     parsed = datetime.fromisoformat(value)

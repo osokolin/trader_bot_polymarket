@@ -15,7 +15,7 @@ from bot.services.market_catalog import MarketCatalogService
 from bot.services.market_sync import LiveMarketDataService
 from bot.services.operator_notifications import OperatorNotificationsService
 from bot.services.outcome_analysis import OutcomeAnalysisService
-from bot.services.proposal_lifecycle import ProposalLifecycleService
+from bot.services.proposal_lifecycle import ProposalLifecycleError, ProposalLifecycleService
 from bot.services.reporting import ReportingService
 from bot.services.saved_views import SavedViewService
 from bot.services.web_auth import (
@@ -949,7 +949,18 @@ class OperatorDashboardApp:
     def _market_decision_review(self, market_id: str) -> str:
         snapshot = self.services.decision_review_service.latest_persisted_for_market(market_id)
         if snapshot is None:
-            self.services.decision_review_service.create_for_market(market_id)
+            try:
+                self.services.decision_review_service.create_for_market(market_id)
+            except ProposalLifecycleError:
+                return page(
+                    "Разбор решения по рынку",
+                    hero("Разбор решения по рынку", "Для этого рынка пока нет сохраненного probability/review контекста.")
+                    + panel(
+                        "Разбор пока недоступен",
+                        self._kv([("market_id", market_id), ("status", "нет probability snapshot")])
+                        + link_row([("live market", f"/markets/live/{market_id}"), ("каталог рынков", "/catalog/markets")]),
+                    ),
+                )
             snapshot = self.services.decision_review_service.latest_persisted_for_market(market_id)
         if snapshot is None:
             raise ValueError(f"No decision review for market: {market_id}")
