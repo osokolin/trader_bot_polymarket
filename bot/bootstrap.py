@@ -16,6 +16,7 @@ from bot.services.decision_inbox import DecisionInboxService
 from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService
+from bot.services.inbox_handlers import build_default_inbox_handlers
 from bot.services.market_catalog import MarketCatalogService
 from bot.services.market_opportunity_scanner import MarketOpportunityScannerService
 from bot.services.market_sync import LiveMarketDataService
@@ -265,6 +266,13 @@ def build_app_container(
             decision_review_service=decision_review_service,
             notifications_service=notifications_service,
             diagnostics_service=diagnostics_service,
+            handlers=build_default_inbox_handlers(
+                settings=settings,
+                proposal_service=proposal_service,
+                decision_review_service=decision_review_service,
+                notifications_service=notifications_service,
+                diagnostics_service=diagnostics_service,
+            ),
         )
         telegram_operator_service = TelegramOperatorService(
             settings=settings,

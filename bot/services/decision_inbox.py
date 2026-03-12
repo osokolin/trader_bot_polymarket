@@ -11,25 +11,19 @@ from bot.domain.enums import (
 from bot.domain.models import OperatorActionRequest, OperatorActionRequestRecord, OperatorAlert, TradeProposal
 from bot.services.audit_log import AuditLogService
 from bot.services.decision_review import DecisionReview, DecisionReviewService
+from bot.services.inbox_handlers import (
+    DecisionInboxError,
+    DecisionInboxRequestHandler,
+    DecisionInboxRequestView,
+    InboxHandlerActionOutcome,
+    build_default_inbox_handlers,
+)
 from bot.services.operator_notifications import OperatorNotificationsService
 from bot.services.polymarket_diagnostics import DiagnosticCheckResult, PolymarketDiagnosticsResult, PolymarketDiagnosticsService
-from bot.services.proposal_lifecycle import ProposalLifecycleError, ProposalLifecycleService
+from bot.services.proposal_lifecycle import ProposalLifecycleService
 from bot.storage.repositories import OperatorActionRequestRepository
 from bot.utils.ids import new_id
 from bot.utils.time import utc_now
-
-
-class DecisionInboxError(ValueError):
-    pass
-
-
-@dataclass(slots=True)
-class DecisionInboxRequestView:
-    request: OperatorActionRequest
-    proposal: TradeProposal | None = None
-    alert: OperatorAlert | None = None
-    diagnostics_label: str | None = None
-    diagnostics_check: DiagnosticCheckResult | None = None
 
 
 @dataclass(slots=True)
@@ -52,6 +46,7 @@ class DecisionInboxService:
         decision_review_service: DecisionReviewService,
         notifications_service: OperatorNotificationsService,
         diagnostics_service: PolymarketDiagnosticsService,
+        handlers: dict[OperatorActionRequestType, DecisionInboxRequestHandler] | None = None,
     ) -> None:
         self.settings = settings
         self.repository = repository
@@ -60,6 +55,13 @@ class DecisionInboxService:
         self.decision_review_service = decision_review_service
         self.notifications_service = notifications_service
         self.diagnostics_service = diagnostics_service
+        self.handlers = handlers or build_default_inbox_handlers(
+            settings=settings,
+            proposal_service=proposal_service,
+            decision_review_service=decision_review_service,
+            notifications_service=notifications_service,
+            diagnostics_service=diagnostics_service,
+        )
 
     def create_proposal_review_request(self, proposal: TradeProposal, source: str = "system") -> OperatorActionRequest:
         return self._create_or_update_request(
@@ -138,28 +140,27 @@ class DecisionInboxService:
 
     def get_request_view(self, request_id: str) -> DecisionInboxRequestView:
         request = self.get_request(request_id)
-        if request.entity_type == OperatorActionEntityType.PROPOSAL:
-            return DecisionInboxRequestView(request=request, proposal=self.proposal_service.latest_proposal_state(request.entity_id))
-        if request.entity_type == OperatorActionEntityType.ALERT:
-            return DecisionInboxRequestView(request=request, alert=self.notifications_service.get_alert(request.entity_id))
-        if request.entity_type == OperatorActionEntityType.DIAGNOSTICS:
-            diagnostics = self.diagnostics_service.run()
-            check = self._diagnostics_check_by_label(diagnostics, request.entity_id)
-            return DecisionInboxRequestView(request=request, diagnostics_label=request.entity_id, diagnostics_check=check)
-        raise DecisionInboxError(f"Unsupported request entity type: {request.entity_type.value}")
+        return self._get_handler(request.request_type).build_view(request)
 
     def apply_action(self, request_id: str, action: str, actor: str, source: str, chat_id: int | None = None) -> DecisionInboxActionResult:
         request = self.get_request(request_id)
         metadata = self._action_metadata(request, action, source, chat_id)
         if action == "skip":
             return self._skip_request(request, actor, metadata)
-        if request.request_type == OperatorActionRequestType.PROPOSAL_REVIEW_REQUEST:
-            return self._apply_proposal_action(request, action, actor, metadata)
-        if request.request_type == OperatorActionRequestType.ALERT_NOTIFICATION:
-            return self._apply_alert_action(request, action, actor, metadata)
-        if request.request_type == OperatorActionRequestType.DIAGNOSTICS_ISSUE:
-            return self._apply_diagnostics_action(request, action, actor, metadata)
-        raise DecisionInboxError(f"Unsupported request type: {request.request_type.value}")
+        outcome = self._get_handler(request.request_type).apply_action(request, action, actor, metadata)
+        updated_request = request
+        if outcome.update_request:
+            updated_request = self._apply_request_outcome(request, actor, outcome)
+        if outcome.record_action:
+            self._record_action(updated_request, action, actor, "ok", metadata | outcome.action_payload)
+        return DecisionInboxActionResult(
+            request=updated_request,
+            action=action,
+            proposal=outcome.proposal,
+            alert=outcome.alert,
+            decision_review=outcome.decision_review,
+            diagnostics_result=outcome.diagnostics_result,
+        )
 
     def _skip_request(
         self,
@@ -179,123 +180,29 @@ class DecisionInboxService:
         self._record_action(updated_request, "skip", actor, "ok", metadata)
         return DecisionInboxActionResult(request=updated_request, action="skip")
 
-    def _apply_proposal_action(
+    def _apply_request_outcome(
         self,
         request: OperatorActionRequest,
-        action: str,
         actor: str,
-        metadata: dict[str, object],
-    ) -> DecisionInboxActionResult:
-        proposal_id = request.entity_id
-        if action == "approve":
-            proposal = self.proposal_service.approve(
-                self.settings,
-                proposal_id,
-                actor=actor,
-                open_positions=0,
-                unresolved_exposure_usd=0.0,
-                theme_exposure_usd=0.0,
-                metadata=metadata,
-            )
-        elif action == "reject":
-            proposal = self.proposal_service.reject(proposal_id, actor=actor, metadata=metadata)
-        elif action == "cancel":
-            proposal = self.proposal_service.cancel(proposal_id, actor=actor, metadata=metadata)
-        elif action == "analysis":
-            proposal = self.proposal_service.request_additional_analysis(proposal_id, actor=actor, metadata=metadata)
-            decision_review = self.decision_review_service.create_for_proposal(proposal_id)
-            updated_request = self._save_request(
-                replace(
-                    request,
-                    status=OperatorActionRequestStatus.ACKNOWLEDGED,
-                    updated_at=utc_now(),
-                )
-            )
-            self._record_action(updated_request, action, actor, "ok", metadata)
-            return DecisionInboxActionResult(
-                request=updated_request,
-                action=action,
-                proposal=proposal,
-                decision_review=decision_review,
-            )
-        elif action == "details":
-            return DecisionInboxActionResult(
-                request=request,
-                action=action,
-                proposal=self.proposal_service.latest_proposal_state(proposal_id),
-            )
-        else:
-            raise DecisionInboxError(f"Invalid request action: {action}")
-        updated_request = self._save_request(
-            replace(
-                request,
-                status=OperatorActionRequestStatus.ACTIONED,
-                updated_at=utc_now(),
-                actioned_at=utc_now(),
-                actioned_by=actor,
-            )
+        outcome: InboxHandlerActionOutcome,
+    ) -> OperatorActionRequest:
+        now = utc_now()
+        updated = replace(
+            request,
+            status=outcome.request_status or request.status,
+            summary=outcome.summary if outcome.summary is not None else request.summary,
+            payload=outcome.payload if outcome.payload is not None else request.payload,
+            updated_at=now,
+            actioned_at=now if outcome.mark_actioned else request.actioned_at,
+            actioned_by=actor if outcome.mark_actioned else request.actioned_by,
         )
-        self._record_action(updated_request, action, actor, "ok", metadata)
-        return DecisionInboxActionResult(request=updated_request, action=action, proposal=proposal)
+        return self._save_request(updated)
 
-    def _apply_alert_action(
-        self,
-        request: OperatorActionRequest,
-        action: str,
-        actor: str,
-        metadata: dict[str, object],
-    ) -> DecisionInboxActionResult:
-        if action == "details":
-            return DecisionInboxActionResult(request=request, action=action, alert=self.notifications_service.get_alert(request.entity_id))
-        if action != "acknowledge":
-            raise DecisionInboxError("This request action is not supported.")
-        alert = self.notifications_service.acknowledge_alert(request.entity_id)
-        updated_request = self._save_request(
-            replace(
-                request,
-                status=OperatorActionRequestStatus.ACTIONED,
-                updated_at=utc_now(),
-                actioned_at=utc_now(),
-                actioned_by=actor,
-            )
-        )
-        self._record_action(updated_request, action, actor, "ok", metadata)
-        return DecisionInboxActionResult(request=updated_request, action=action, alert=alert)
-
-    def _apply_diagnostics_action(
-        self,
-        request: OperatorActionRequest,
-        action: str,
-        actor: str,
-        metadata: dict[str, object],
-    ) -> DecisionInboxActionResult:
-        diagnostics = self.diagnostics_service.run()
-        if action == "details":
-            return DecisionInboxActionResult(request=request, action=action, diagnostics_result=diagnostics)
-        if action != "refresh":
-            raise DecisionInboxError("This request action is not supported.")
-        check = self._diagnostics_check_by_label(diagnostics, request.entity_id)
-        if check.ok:
-            updated_request = replace(
-                request,
-                status=OperatorActionRequestStatus.ACTIONED,
-                summary=f"{request.entity_id}: resolved",
-                payload={"label": request.entity_id, "message": "resolved", "ok": True},
-                updated_at=utc_now(),
-                actioned_at=utc_now(),
-                actioned_by=actor,
-            )
-        else:
-            updated_request = replace(
-                request,
-                status=OperatorActionRequestStatus.ACKNOWLEDGED,
-                summary=f"{request.entity_id}: {check.message}",
-                payload={"label": request.entity_id, "message": check.message, "ok": False},
-                updated_at=utc_now(),
-            )
-        saved = self._save_request(updated_request)
-        self._record_action(saved, action, actor, "ok", metadata | {"diagnostics_ok": check.ok})
-        return DecisionInboxActionResult(request=saved, action=action, diagnostics_result=diagnostics)
+    def _get_handler(self, request_type: OperatorActionRequestType) -> DecisionInboxRequestHandler:
+        handler = self.handlers.get(request_type)
+        if handler is None:
+            raise DecisionInboxError(f"Unsupported request type: {request_type.value}")
+        return handler
 
     def _create_or_update_request(
         self,
@@ -396,18 +303,3 @@ class DecisionInboxService:
             ("database", diagnostics.database),
         ]
         return [(label, check) for label, check in checks if not check.ok]
-
-    def _diagnostics_check_by_label(
-        self,
-        diagnostics: PolymarketDiagnosticsResult,
-        label: str,
-    ) -> DiagnosticCheckResult:
-        mapping = {
-            "gamma": diagnostics.gamma,
-            "clob_rest": diagnostics.clob_rest,
-            "websocket": diagnostics.websocket,
-            "database": diagnostics.database,
-        }
-        if label not in mapping:
-            raise DecisionInboxError(f"Unknown diagnostics check: {label}")
-        return mapping[label]
