@@ -28,7 +28,7 @@ Install:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -e .
+.venv/bin/pip install -e ".[dev]"
 ```
 
 Optional local env file:
@@ -54,6 +54,31 @@ Use an isolated local database for smoke/demo runs:
 ```bash
 export BOT_DATABASE_URL=sqlite:///bot.db
 ```
+
+## Developer Verification
+
+Canonical day-to-day verification commands from the repo root:
+
+```bash
+scripts/dev verify-fast
+scripts/dev verify
+```
+
+What they do:
+- `scripts/dev verify-fast`
+  runs tests, linting, targeted type checking, and syntax compilation
+- `scripts/dev verify`
+  runs the full fast verification flow plus config validation and demo seed
+
+Helpful individual commands:
+
+```bash
+scripts/dev test
+.venv/bin/python -m ruff check bot tests scripts
+.venv/bin/python -m mypy
+```
+
+These commands are intended to run directly from the project root without extra `PYTHONPATH` setup.
 
 ## CLI Usage
 

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from bot.domain.enums import IntentStatus
 from bot.domain.models import ExecutionEvaluation, ExecutionEvaluationSnapshot
-from bot.services.execution_pipeline import ExecutionBoundaryError, ExecutionPipelineService
-from bot.services.proposal_lifecycle import ProposalLifecycleError, ProposalLifecycleService
+from bot.services.execution_pipeline import ExecutionPipelineService
+from bot.services.proposal_lifecycle import ProposalLifecycleService
 from bot.storage.repositories import ExecutionEvaluationRepository
 from bot.utils.ids import new_id
 from bot.utils.time import utc_now

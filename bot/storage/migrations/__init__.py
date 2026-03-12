@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, UTC
 
@@ -15,7 +16,7 @@ class MigrationError(RuntimeError):
 class MigrationStep:
     version: int
     name: str
-    apply: object
+    apply: Callable[[sqlite3.Connection], None]
 
 
 MIGRATIONS: tuple[MigrationStep, ...] = (

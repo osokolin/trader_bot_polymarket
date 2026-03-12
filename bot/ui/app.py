@@ -6,7 +6,7 @@ import json
 from urllib.parse import parse_qs
 
 from bot.domain.enums import AlertState, WatchTargetType
-from bot.domain.models import DecisionReviewSnapshot, OutcomeAnalysisSnapshot, SavedView
+from bot.domain.models import DecisionReviewSnapshot, SavedView
 from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService

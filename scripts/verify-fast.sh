@@ -6,8 +6,14 @@ PYTHON_BIN="$PROJECT_ROOT/.venv/bin/python"
 
 echo "==> Running fast verification"
 
-echo "==> Unit tests"
-"$PYTHON_BIN" -m unittest discover -s tests -v
+echo "==> Tests"
+"$PYTHON_BIN" -m pytest
+
+echo "==> Lint"
+"$PYTHON_BIN" -m ruff check bot tests scripts
+
+echo "==> Type check"
+"$PYTHON_BIN" -m mypy
 
 echo "==> Syntax check"
 "$PYTHON_BIN" -m py_compile $(find bot tests -name '*.py' | sort)

@@ -15,7 +15,7 @@ if [ -z "$cmd" ]; then
   echo "Commands:"
   echo "  verify        Run full verification"
   echo "  verify-fast   Run fast verification"
-  echo "  test          Run unit tests"
+  echo "  test          Run tests"
   echo "  run           Run CLI"
   echo "  scan          Run market opportunity scanner"
   echo "  seed          Seed demo workflow"
@@ -40,7 +40,7 @@ verify-fast)
   ;;
 
 test)
-  "$PY" -m unittest discover -s tests -v
+  "$PY" -m pytest
   ;;
 
 run)

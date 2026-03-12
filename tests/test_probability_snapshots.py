@@ -182,7 +182,7 @@ class ProbabilitySnapshotsTest(unittest.TestCase):
                     self.settings,
                     service.proposal_engine.create_default_context(self.market, self.probability, 0.55),
                 )
-                approved = service.approve(
+                service.approve(
                     self.settings,
                     proposal.proposal_id,
                     actor="alice",
