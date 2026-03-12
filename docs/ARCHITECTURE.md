@@ -44,3 +44,9 @@ market snapshot + signal + probability
 - `DiagnosticsBootstrap` provides a smaller read-only composition root for Polymarket diagnostics without creating the full application graph.
 - `bot/cli/app.py` stays focused on argument parsing, command dispatch, and presenter output.
 - Demo/static UI rendering reuses the same bootstrap layer instead of hand-building a second service graph.
+
+## Decision Inbox Handlers
+
+- `DecisionInboxService` owns inbox semantics: request retrieval, queue ordering, request bookkeeping, and action recording.
+- Request-type-specific action logic is delegated to explicit handlers under `bot/services/inbox_handlers/`.
+- Proposal transitions still flow through `ProposalLifecycleService`; Telegram remains a thin caller through `TelegramOperatorService`.

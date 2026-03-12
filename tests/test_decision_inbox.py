@@ -11,16 +11,22 @@ from bot.domain.enums import (
     AlertSeverity,
     AlertState,
     AlertType,
+    OperatorActionEntityType,
     OperatorActionRequestStatus,
     OperatorActionRequestType,
     SourceType,
     WatchTargetType,
 )
-from bot.domain.models import Market, OperatorAlert, ProbabilityEstimate
+from bot.domain.models import Market, OperatorActionRequest, OperatorAlert, ProbabilityEstimate
 from bot.services.audit_log import AuditLogService
 from bot.services.decision_inbox import DecisionInboxService
 from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_pipeline import ExecutionPipelineService
+from bot.services.inbox_handlers.base import (
+    DecisionInboxRequestHandler,
+    DecisionInboxRequestView,
+    InboxHandlerActionOutcome,
+)
 from bot.services.operator_notifications import OperatorNotificationsService
 from bot.services.polymarket_diagnostics import DiagnosticCheckResult, PolymarketDiagnosticsResult
 from bot.services.market_data import RevalidationSnapshot
@@ -72,6 +78,27 @@ class _FakeDiagnosticsService:
 
     def run(self) -> PolymarketDiagnosticsResult:
         return self.result
+
+
+class _FakeScannerSummaryHandler(DecisionInboxRequestHandler):
+    request_type = OperatorActionRequestType.SCANNER_SUMMARY
+
+    def __init__(self) -> None:
+        self.view_calls = 0
+        self.action_calls = 0
+
+    def build_view(self, request) -> DecisionInboxRequestView:
+        self.view_calls += 1
+        return DecisionInboxRequestView(request=request)
+
+    def apply_action(self, request, action: str, actor: str, metadata: dict[str, object]) -> InboxHandlerActionOutcome:
+        self.action_calls += 1
+        return InboxHandlerActionOutcome(
+            request_status=OperatorActionRequestStatus.ACKNOWLEDGED,
+            summary="scanner summary reviewed",
+            payload={"kind": "scanner_summary", "action": action},
+            action_payload={"handler": "scanner_summary"},
+        )
 
 
 class DecisionInboxTest(unittest.TestCase):
@@ -201,6 +228,46 @@ class DecisionInboxTest(unittest.TestCase):
         request = self.service.create_proposal_review_request(proposal)
         with self.assertRaises(ValueError):
             self.service.apply_action(request.request_id, "acknowledge", actor="telegram", source="telegram", chat_id=1)
+
+    def test_handler_registry_dispatches_and_service_keeps_bookkeeping(self) -> None:
+        handler = _FakeScannerSummaryHandler()
+        service = DecisionInboxService(
+            settings=self.settings,
+            repository=self.repository,
+            audit_log=AuditLogService(self.audit_repository),
+            proposal_service=self.proposal_service,
+            decision_review_service=self.decision_review_service,
+            notifications_service=self.notifications_service,
+            diagnostics_service=self.diagnostics_service,
+            handlers={OperatorActionRequestType.SCANNER_SUMMARY: handler},
+        )
+        now = utc_now()
+        request = OperatorActionRequest(
+            request_id="req_scan",
+            request_type=OperatorActionRequestType.SCANNER_SUMMARY,
+            entity_type=OperatorActionEntityType.SCANNER,
+            entity_id="scanner_summary_1",
+            status=OperatorActionRequestStatus.OPEN,
+            title="Scanner Summary",
+            summary="2 opportunities found",
+            payload={"kind": "scanner_summary"},
+            created_at=now,
+            updated_at=now,
+            source="system",
+        )
+        self.repository.save(request)
+        view = service.get_request_view(request.request_id)
+        result = service.apply_action(request.request_id, "details", actor="telegram", source="telegram", chat_id=99)
+        saved = service.get_request(request.request_id)
+        self.assertEqual(view.request.request_id, request.request_id)
+        self.assertEqual(result.request.request_id, request.request_id)
+        self.assertEqual(saved.status, OperatorActionRequestStatus.ACKNOWLEDGED)
+        self.assertEqual(saved.summary, "scanner summary reviewed")
+        self.assertEqual(saved.payload["kind"], "scanner_summary")
+        self.assertEqual(handler.view_calls, 1)
+        self.assertEqual(handler.action_calls, 1)
+        actions = self.repository.list_actions(request.request_id)
+        self.assertEqual(actions[0].payload["handler"], "scanner_summary")
 
 
 if __name__ == "__main__":
