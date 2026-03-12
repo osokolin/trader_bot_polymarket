@@ -6,10 +6,7 @@ import json
 import os
 from pathlib import Path
 
-from bot.adapters.polymarket.clob_client import ClobMarketDataClient, PolymarketClient, PolymarketOrderBookAdapter
-from bot.adapters.polymarket.gamma_client import GammaApiClient, PolymarketMarketMetadataAdapter
-from bot.adapters.polymarket.websocket_market import PublicMarketWebSocketClient
-from bot.adapters.polymarket.trading import SemiAutoExecutionAdapter
+from bot.bootstrap import build_app_container, build_diagnostics_bootstrap, load_app_settings
 from bot.cli.presenter import (
     analytics_summary_lines,
     alert_lines,
@@ -44,47 +41,17 @@ from bot.cli.presenter import (
     sort_items,
     watchlist_lines,
 )
-from bot.config.loader import load_settings
 from bot.demo.seed import seed_demo_data
 from bot.domain.enums import AlertState, WatchTargetType
-from bot.services.analytics import AnalyticsService
-from bot.services.audit_log import AuditLogService
-from bot.services.decision_review import DecisionReviewService
-from bot.services.decision_inbox import DecisionInboxService
-from bot.services.execution_evaluation import ExecutionEvaluationService
-from bot.services.execution_pipeline import ExecutionPipelineService
-from bot.services.approval_snapshot_provider import PolymarketApprovalSnapshotProvider
 from bot.services.market_catalog import MarketCatalogService
 from bot.services.market_opportunity_scanner import MarketOpportunityScannerService
 from bot.services.opportunity_proposal_bridge import OpportunityProposalBridgeService
 from bot.services.polymarket_diagnostics import PolymarketDiagnosticsService
+from bot.services.proposal_lifecycle import ProposalLifecycleError, ProposalLifecycleService
 from bot.services.market_sync import LiveMarketDataService
 from bot.services.realtime_market_feed import RealtimeMarketFeedService
-from bot.services.outcome_analysis import OutcomeAnalysisService
-from bot.services.operator_notifications import OperatorNotificationsService
-from bot.services.probability_engine import EdgeAdjustedProbabilityProvider
-from bot.services.proposal_lifecycle import ProposalLifecycleError, ProposalLifecycleService
-from bot.services.reporting import ReportingService
 from bot.services.runtime_safety import build_runtime_safety_snapshot
-from bot.services.saved_views import SavedViewService
-from bot.services.telegram_operator_service import TelegramOperatorService
-from bot.storage.db import Database
-from bot.storage.repositories import (
-    AlertRepository,
-    AuditRepository,
-    DecisionReviewRepository,
-    ExecutionEvaluationRepository,
-    OutcomeAnalysisRepository,
-    MarketDataSnapshotRepository,
-    OperatorActionRequestRepository,
-    OrderIntentRepository,
-    ProbabilitySnapshotRepository,
-    PositionRepository,
-    ProposalRepository,
-    SavedViewRepository,
-    WatchlistRepository,
-)
-from bot.ui import OperatorDashboardApp, OperatorDashboardServices, serve_ui
+from bot.ui import serve_ui
 from bot.telegram.auth import TelegramOperatorAuth
 from bot.telegram.bot_app import build_telegram_bot_app
 from bot.telegram.router import TelegramRouter
@@ -380,526 +347,430 @@ def main(argv: list[str] | None = None) -> int:
     if not args.command:
         parser.print_help()
         return 0
-    settings = load_settings(Path(args.config_dir), profile=args.profile)
+    settings = load_app_settings(Path(args.config_dir), profile=args.profile)
     if args.command == "diagnostics" and args.diagnostics_command == "polymarket":
-        client = PolymarketClient()
-        gamma_client = GammaApiClient()
+        diagnostics_bootstrap = build_diagnostics_bootstrap(
+            diagnostics_service_cls=PolymarketDiagnosticsService,
+        )
         try:
-            diagnostics_service = PolymarketDiagnosticsService(
-                gamma_client=gamma_client,
-                clob_client=ClobMarketDataClient(http_client=client.http_client),
-                websocket_client=PublicMarketWebSocketClient(),
-            )
-            _print_lines(polymarket_diagnostics_lines(diagnostics_service.run()))
+            _print_lines(polymarket_diagnostics_lines(diagnostics_bootstrap.diagnostics_service.run()))
             return 0
         finally:
-            gamma_client.close()
-            client.close()
-    database = Database(_resolve_database_path())
-    database.initialize()
-    client = PolymarketClient()
-    gamma_client = GammaApiClient()
-    connection = database.connect()
+            diagnostics_bootstrap.close()
+    container = build_app_container(
+        settings,
+        args.profile,
+        _resolve_database_path(),
+        market_data_service_cls=LiveMarketDataService,
+        realtime_market_feed_service_cls=RealtimeMarketFeedService,
+        market_catalog_service_cls=MarketCatalogService,
+        scanner_service_cls=MarketOpportunityScannerService,
+        diagnostics_service_cls=PolymarketDiagnosticsService,
+        opportunity_bridge_service_cls=OpportunityProposalBridgeService,
+    )
     try:
-        try:
-            market_data_service = LiveMarketDataService(
-                PolymarketMarketMetadataAdapter(gamma_client),
-                PolymarketOrderBookAdapter(ClobMarketDataClient(http_client=client.http_client)),
-                MarketDataSnapshotRepository(connection),
-            )
-            realtime_market_feed_service = RealtimeMarketFeedService(
-                market_data_service,
-                PublicMarketWebSocketClient(),
-                stale_after_seconds=market_data_service.stale_after_seconds,
-            )
-            market_catalog_service = MarketCatalogService(gamma_client)
-            market_opportunity_scanner = MarketOpportunityScannerService(
-                market_catalog_service=market_catalog_service,
-                market_data_service=market_data_service,
-            )
-            proposal_service = ProposalLifecycleService(
-                ProposalRepository(connection),
-                AuditLogService(AuditRepository(connection)),
-                snapshot_provider=PolymarketApprovalSnapshotProvider(
-                    market_data_service,
-                    EdgeAdjustedProbabilityProvider(),
+        market_data_service = container.market_data_service
+        realtime_market_feed_service = container.realtime_market_feed_service
+        market_catalog_service = container.market_catalog_service
+        market_opportunity_scanner = container.market_opportunity_scanner
+        proposal_service = container.proposal_service
+        opportunity_bridge_service = container.opportunity_bridge_service
+        notifications_service = container.notifications_service
+        execution_service = container.execution_service
+        analytics_service = container.analytics_service
+        decision_review_service = container.decision_review_service
+        decision_inbox_service = container.decision_inbox_service
+        execution_evaluation_service = container.execution_evaluation_service
+        outcome_analysis_service = container.outcome_analysis_service
+        saved_view_service = container.saved_view_service
+        reporting_service = container.reporting_service
+        position_repository = container.position_repository
+        telegram_operator_service = container.telegram_operator_service
+        if args.command == "ui" and args.ui_command == "serve":
+            serve_ui(container.dashboard_app(), args.host, args.port)
+            return 0
+        if args.command == "telegram" and args.telegram_command == "serve":
+            if telegram_operator_service is None:
+                raise ValueError("Telegram runtime is not configured")
+            telegram_app = build_telegram_bot_app(
+                TelegramRouter(
+                    auth=TelegramOperatorAuth.from_env(),
+                    operator_service=telegram_operator_service,
                 ),
-                probability_snapshot_repository=ProbabilitySnapshotRepository(connection),
+                telegram_operator_service,
             )
-            opportunity_bridge_service = OpportunityProposalBridgeService(
-                scanner_service=market_opportunity_scanner,
-                proposal_service=proposal_service,
-            )
-            notifications_service = OperatorNotificationsService(
-                WatchlistRepository(connection),
-                AlertRepository(connection),
-                ProposalRepository(connection),
-                OrderIntentRepository(connection),
-            )
-            execution_service = ExecutionPipelineService(
+            try:
+                telegram_app.serve_forever()
+            finally:
+                telegram_app.client.close()
+            return 0
+        if args.command == "demo" and args.demo_command == "seed":
+            result = seed_demo_data(
                 settings,
-                SemiAutoExecutionAdapter(),
-                OrderIntentRepository(connection),
-                AuditLogService(AuditRepository(connection)),
-                notifications_service=notifications_service,
-            )
-            analytics_service = AnalyticsService(proposal_service, execution_service)
-            decision_review_service = DecisionReviewService(
                 proposal_service,
                 execution_service,
-                DecisionReviewRepository(connection),
-            )
-            decision_inbox_service = DecisionInboxService(
-                settings=settings,
-                repository=OperatorActionRequestRepository(connection),
-                audit_log=AuditLogService(AuditRepository(connection)),
-                proposal_service=proposal_service,
-                decision_review_service=decision_review_service,
-                notifications_service=notifications_service,
-                diagnostics_service=PolymarketDiagnosticsService(
-                    gamma_client=gamma_client,
-                    clob_client=ClobMarketDataClient(http_client=client.http_client),
-                    websocket_client=PublicMarketWebSocketClient(),
-                ),
-            )
-            execution_evaluation_service = ExecutionEvaluationService(
-                proposal_service,
-                execution_service,
-                ExecutionEvaluationRepository(connection),
-            )
-            outcome_analysis_service = OutcomeAnalysisService(
-                proposal_service,
-                DecisionReviewRepository(connection),
-                ExecutionEvaluationRepository(connection),
-                OutcomeAnalysisRepository(connection),
-            )
-            saved_view_service = SavedViewService(SavedViewRepository(connection))
-            reporting_service = ReportingService(
-                DecisionReviewRepository(connection),
+                notifications_service,
+                decision_review_service,
                 execution_evaluation_service,
                 outcome_analysis_service,
-                notifications_service,
-                analytics_service,
+                saved_view_service,
             )
-            position_repository = PositionRepository(connection)
-            telegram_operator_service = TelegramOperatorService(
-                settings=settings,
-                profile=args.profile,
-                execution_adapter=execution_service.execution_adapter,
-                proposal_service=proposal_service,
-                decision_review_service=decision_review_service,
-                decision_inbox_service=decision_inbox_service,
-                notifications_service=notifications_service,
-                scanner_service=market_opportunity_scanner,
-                diagnostics_service=PolymarketDiagnosticsService(
-                    gamma_client=gamma_client,
-                    clob_client=ClobMarketDataClient(http_client=client.http_client),
-                    websocket_client=PublicMarketWebSocketClient(),
-                ),
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        if args.command == "config" and args.config_command == "validate":
+            print(f"config valid mode={settings.mode.value} profile={args.profile}")
+            return 0
+        if args.command == "proposals" and args.proposals_command == "list":
+            proposal_service.expire_stale()
+            if args.scope == "active":
+                proposals = proposal_service.list_active_proposals()
+            elif args.scope == "approved":
+                proposals = proposal_service.list_approved_proposals()
+            else:
+                proposals = proposal_service.list_proposals()
+            proposals = sort_items(proposals, args.sort)
+            page = slice_items(proposals, args.limit, args.offset)
+            _print_lines(list_header_lines(args.scope, proposals, page, args.limit, args.offset, args.sort))
+            for proposal in page:
+                print(proposal_summary_line(proposal))
+            return 0
+        if args.command == "proposals" and args.proposals_command == "latest-approved":
+            proposal = proposal_service.latest_approved_proposal()
+            if proposal is None:
+                print("no_approved_proposal")
+            else:
+                _print_lines(
+                    latest_lookup_lines(
+                        "latest_approved_proposal",
+                        proposal.proposal_id,
+                        proposal_summary_line(proposal),
+                    )
+                )
+            return 0
+        if args.command == "proposals" and args.proposals_command == "probability":
+            _print_lines(probability_snapshot_lines(proposal_service.latest_probability_snapshot_for_proposal(args.id)))
+            return 0
+        if args.command == "proposals" and args.proposals_command == "compare":
+            _print_lines(probability_drift_lines(proposal_service.compare_probability_snapshots_for_proposal(args.id)))
+            return 0
+        if args.command == "proposals" and args.proposals_command == "decision-review":
+            _print_lines(decision_review_lines(decision_review_service.create_for_proposal(args.id)))
+            return 0
+        if args.command == "proposals" and args.proposals_command == "execution-evaluation":
+            _print_lines(execution_evaluation_lines(execution_evaluation_service.evaluate_proposal(args.id)))
+            return 0
+        if args.command == "proposals" and args.proposals_command == "research":
+            _print_lines(research_summary_lines(proposal_service.latest_probability_snapshot_for_proposal(args.id)))
+            return 0
+        if args.command == "proposals" and args.proposals_command == "show":
+            proposal = proposal_service.latest_proposal_state(args.id)
+            _print_lines(proposal_detail_lines(proposal))
+            return 0
+        if args.command == "proposals" and args.proposals_command == "reviews":
+            _print_lines(review_lines(proposal_service.list_review_history(args.id)))
+            return 0
+        if args.command == "proposals" and args.proposals_command == "audits":
+            _print_lines(audit_lines(proposal_service.list_audit_history(args.id)))
+            return 0
+        if args.command == "proposals" and args.proposals_command == "reject":
+            proposal = proposal_service.reject(args.id, actor="cli")
+            print(f"{proposal.proposal_id} {proposal.status.value}")
+            return 0
+        if args.command == "proposals" and args.proposals_command == "edit-size":
+            proposal = proposal_service.edit_size(args.id, args.amount, actor="cli")
+            print(f"{proposal.proposal_id} size={proposal.current_size_usd:.2f}")
+            return 0
+        if args.command == "proposals" and args.proposals_command == "edit-price":
+            proposal = proposal_service.edit_price(args.id, args.price, actor="cli")
+            print(f"{proposal.proposal_id} price={proposal.current_limit_price:.4f}")
+            return 0
+        if args.command == "proposals" and args.proposals_command == "approve":
+            proposal = proposal_service.approve(
+                settings,
+                args.id,
+                actor="cli",
+                open_positions=0,
+                unresolved_exposure_usd=0.0,
+                theme_exposure_usd=0.0,
             )
-            if args.command == "ui" and args.ui_command == "serve":
-                serve_ui(
-                    OperatorDashboardApp(
-                        OperatorDashboardServices(
-                            proposal_service=proposal_service,
-                            execution_service=execution_service,
-                            notifications_service=notifications_service,
-                            decision_review_service=decision_review_service,
-                            execution_evaluation_service=execution_evaluation_service,
-                            outcome_analysis_service=outcome_analysis_service,
-                            saved_view_service=saved_view_service,
-                            reporting_service=reporting_service,
-                            market_data_service=market_data_service,
-                            market_catalog_service=MarketCatalogService(gamma_client),
-                        )
-                    ),
-                    args.host,
-                    args.port,
+            print(
+                f"{proposal.proposal_id} {proposal.status.value} "
+                f"market_price={proposal.market_price:.4f} limit={proposal.current_limit_price:.4f}"
+            )
+            return 0
+        if args.command == "intents" and args.intents_command == "list":
+            if args.scope == "active":
+                intents = execution_service.list_active_intents()
+            elif args.scope == "terminal":
+                intents = execution_service.list_terminal_intents()
+            else:
+                intents = execution_service.list_all_intents()
+            intents = sort_items(intents, args.sort)
+            page = slice_items(intents, args.limit, args.offset)
+            _print_lines(list_header_lines(args.scope, intents, page, args.limit, args.offset, args.sort))
+            for intent in page:
+                print(intent_summary_line(intent))
+            return 0
+        if args.command == "intents" and args.intents_command == "show":
+            intent = execution_service.latest_intent_state(args.id)
+            _print_lines(intent_detail_lines(intent))
+            return 0
+        if args.command == "intents" and args.intents_command == "latest-for-proposal":
+            intent = execution_service.latest_active_intent(args.proposal_id)
+            if intent is None:
+                print("no_active_intent")
+            else:
+                _print_lines(latest_lookup_lines("latest_active_intent", intent.intent_id, intent_summary_line(intent)))
+            return 0
+        if args.command == "intents" and args.intents_command == "latest-terminal":
+            intent = execution_service.latest_terminal_intent()
+            if intent is None:
+                print("no_terminal_intent")
+            else:
+                _print_lines(
+                    latest_lookup_lines("latest_terminal_intent", intent.intent_id, intent_summary_line(intent))
                 )
-                return 0
-            if args.command == "telegram" and args.telegram_command == "serve":
-                telegram_app = build_telegram_bot_app(
-                    TelegramRouter(
-                        auth=TelegramOperatorAuth.from_env(),
-                        operator_service=telegram_operator_service,
-                    ),
-                    telegram_operator_service,
+            return 0
+        if args.command == "intents" and args.intents_command == "reviews":
+            _print_lines(review_lines(execution_service.list_review_history(args.id)))
+            return 0
+        if args.command == "intents" and args.intents_command == "audits":
+            _print_lines(audit_lines(execution_service.list_audit_history(args.id)))
+            return 0
+        if args.command == "intents" and args.intents_command == "simulate":
+            outcome = execution_service.simulate_intent(
+                args.id,
+                actor="cli",
+                best_bid=args.best_bid,
+                best_ask=args.best_ask,
+                ttl_ms=args.ttl_ms,
+                cancel_after_ms=args.cancel_after_ms,
+                base_latency_ms=args.base_latency_ms,
+            )
+            print(
+                f"intent={args.id} stage={outcome.stage} accepted={outcome.accepted} "
+                f"reference_price={outcome.reference_price:.4f} "
+                f"best_bid={'-' if outcome.best_bid is None else f'{outcome.best_bid:.4f}'} "
+                f"best_ask={'-' if outcome.best_ask is None else f'{outcome.best_ask:.4f}'} "
+                f"simulated_price="
+                f"{'-' if outcome.simulated_price is None else f'{outcome.simulated_price:.4f}'} "
+                f"slippage_bps={'-' if outcome.slippage_bps is None else f'{outcome.slippage_bps:.2f}'} "
+                f"latency_ms={'-' if outcome.latency_ms is None else outcome.latency_ms} "
+                f"completion_reason={outcome.completion_reason or '-'}"
+            )
+            return 0
+        if args.command == "intents" and args.intents_command == "executions":
+            _print_lines(execution_history_lines(execution_service.list_execution_history(args.id)))
+            return 0
+        if args.command == "intents" and args.intents_command == "timeline":
+            _print_lines(execution_timeline_lines(execution_service.list_execution_timeline(args.id)))
+            return 0
+        if args.command == "intents" and args.intents_command == "evaluate":
+            _print_lines(execution_evaluation_lines(execution_evaluation_service.evaluate_intent(args.id)))
+            return 0
+        if args.command == "intents" and args.intents_command == "simulation-summary":
+            if args.intent_id:
+                _print_lines(simulation_summary_lines(execution_service.simulation_summary_for_intent(args.intent_id)))
+            else:
+                _print_lines(simulation_summary_lines(execution_service.simulation_summary_overall()))
+            return 0
+        if args.command == "intents" and args.intents_command == "latest-simulated":
+            _print_lines(latest_execution_lines(execution_service.latest_simulated_execution_overall()))
+            return 0
+        if args.command == "safety" and args.safety_command == "inspect":
+            snapshot = build_runtime_safety_snapshot(
+                settings,
+                args.profile,
+                execution_service.execution_adapter,
+                open_positions=position_repository.count_open(),
+                unresolved_exposure_usd=position_repository.unresolved_exposure(),
+            )
+            _print_lines(runtime_safety_lines(snapshot, include_exposure=False))
+            return 0
+        if args.command == "health" and args.health_command == "inspect":
+            snapshot = build_runtime_safety_snapshot(
+                settings,
+                args.profile,
+                execution_service.execution_adapter,
+                open_positions=position_repository.count_open(),
+                unresolved_exposure_usd=position_repository.unresolved_exposure(),
+            )
+            _print_lines(runtime_safety_lines(snapshot, include_exposure=True))
+            return 0
+        if args.command == "portfolio" and args.portfolio_command == "summary":
+            _print_lines(analytics_summary_lines(analytics_service.summarize("portfolio", args.since_hours)))
+            return 0
+        if args.command == "session" and args.session_command == "summary":
+            _print_lines(analytics_summary_lines(analytics_service.summarize("session", args.since_hours)))
+            return 0
+        if args.command == "watchlist" and args.watchlist_command == "add":
+            entry = notifications_service.add_watch(WatchTargetType(args.type), args.id, args.label)
+            _print_lines(watchlist_lines([entry]))
+            return 0
+        if args.command == "watchlist" and args.watchlist_command == "remove":
+            notifications_service.remove_watch(WatchTargetType(args.type), args.id)
+            print(f"removed {args.type}:{args.id}")
+            return 0
+        if args.command == "watchlist" and args.watchlist_command == "list":
+            target_type = None if args.type is None else WatchTargetType(args.type)
+            _print_lines(watchlist_lines(notifications_service.list_watchlist(target_type)))
+            return 0
+        if args.command == "alerts" and args.alerts_command == "scan":
+            _print_lines(alert_lines(notifications_service.scan()))
+            return 0
+        if args.command == "alerts" and args.alerts_command == "list":
+            state = None if args.state is None else AlertState(args.state)
+            _print_lines(alert_lines(notifications_service.list_alerts(watchlist_only=args.watchlist_only, state=state)))
+            return 0
+        if args.command == "alerts" and args.alerts_command == "acknowledge":
+            _print_lines(alert_lines([notifications_service.acknowledge_alert(args.id)]))
+            return 0
+        if args.command == "alerts" and args.alerts_command == "dismiss":
+            _print_lines(alert_lines([notifications_service.dismiss_alert(args.id)]))
+            return 0
+        if args.command == "alerts" and args.alerts_command == "resolve":
+            _print_lines(alert_lines([notifications_service.resolve_alert(args.id)]))
+            return 0
+        if args.command == "markets" and args.markets_command == "probability":
+            _print_lines(probability_snapshot_lines(proposal_service.latest_probability_snapshot_for_market(args.id)))
+            return 0
+        if args.command == "markets" and args.markets_command == "compare":
+            _print_lines(probability_drift_lines(proposal_service.compare_probability_snapshots_for_market(args.id)))
+            return 0
+        if args.command == "markets" and args.markets_command == "decision-review":
+            _print_lines(decision_review_lines(decision_review_service.create_for_market(args.id)))
+            return 0
+        if args.command == "markets" and args.markets_command == "research":
+            _print_lines(research_summary_lines(proposal_service.latest_probability_snapshot_for_market(args.id)))
+            return 0
+        if args.command == "markets" and args.markets_command == "live":
+            _print_lines(market_data_lines(market_data_service.inspect_snapshot(args.id, refresh=args.refresh)))
+            return 0
+        if args.command == "markets" and args.markets_command == "catalog":
+            active, closed = _catalog_scope_to_flags(args.scope)
+            _print_lines(
+                market_catalog_lines(
+                    market_catalog_service.list_markets(limit=args.limit, active=active, closed=closed)
                 )
-                try:
-                    telegram_app.serve_forever()
-                finally:
-                    telegram_app.client.close()
-                return 0
-            if args.command == "demo" and args.demo_command == "seed":
-                result = seed_demo_data(
-                    settings,
-                    proposal_service,
-                    execution_service,
-                    notifications_service,
-                    decision_review_service,
-                    execution_evaluation_service,
-                    outcome_analysis_service,
-                    saved_view_service,
+            )
+            return 0
+        if args.command == "markets" and args.markets_command == "scan":
+            _print_lines(
+                market_opportunity_lines(
+                    market_opportunity_scanner.scan(
+                        settings,
+                        min_edge=args.min_edge,
+                        min_liquidity=args.min_liquidity,
+                        limit=args.limit,
+                    )
                 )
-                print(json.dumps(result, sort_keys=True))
+            )
+            return 0
+        if args.command == "markets" and args.markets_command == "draft-opportunities":
+            _print_lines(
+                opportunity_draft_lines(
+                    opportunity_bridge_service.draft_opportunities(
+                        settings,
+                        min_edge=args.min_edge,
+                        min_liquidity=args.min_liquidity,
+                        limit=args.limit,
+                    )
+                )
+            )
+            return 0
+        if args.command == "markets" and args.markets_command == "cache":
+            snapshot = market_data_service.latest_cached_snapshot(args.id)
+            if snapshot is None:
+                print("no_cached_market_snapshot")
+            else:
+                _print_lines(market_data_lines(snapshot))
+            return 0
+        if args.command == "markets" and args.markets_command == "stream-once":
+            _print_lines(market_data_lines(asyncio.run(realtime_market_feed_service.refresh_from_websocket(args.id))))
+            return 0
+        if args.command == "events" and args.events_command == "catalog":
+            active, closed = _catalog_scope_to_flags(args.scope)
+            _print_lines(
+                event_catalog_lines(
+                    market_catalog_service.list_events(limit=args.limit, active=active, closed=closed)
+                )
+            )
+            return 0
+        if args.command == "analysis" and args.analysis_command == "outcomes":
+            _print_lines(outcome_analysis_lines(outcome_analysis_service.summarize_outcomes(args.group_by, args.since_hours)))
+            return 0
+        if args.command == "analysis" and args.analysis_command == "learning-summary":
+            _print_lines(outcome_analysis_lines(outcome_analysis_service.summarize_learning(args.group_by, args.since_hours)))
+            return 0
+        if args.command == "analysis" and args.analysis_command == "latest":
+            snapshot = outcome_analysis_service.latest_snapshot(args.scope, args.group_by)
+            if snapshot is None:
+                print("no_analysis_snapshot")
+            else:
+                _print_lines(outcome_analysis_lines(snapshot))
+            return 0
+        if args.command == "views" and args.views_command == "save":
+            saved = saved_view_service.save(args.name, args.kind, json.loads(args.params))
+            _print_lines(saved_view_lines([saved]))
+            return 0
+        if args.command == "views" and args.views_command == "list":
+            _print_lines(saved_view_lines(saved_view_service.list_all()))
+            return 0
+        if args.command == "views" and args.views_command == "show":
+            saved = saved_view_service.get(args.name)
+            _print_lines(saved_view_lines([] if saved is None else [saved]))
+            return 0
+        if args.command == "views" and args.views_command == "run":
+            saved = saved_view_service.get(args.name)
+            if saved is None:
+                print("no_saved_view")
                 return 0
-            if args.command == "config" and args.config_command == "validate":
-                print(f"config valid mode={settings.mode.value} profile={args.profile}")
-                return 0
-            if args.command == "proposals" and args.proposals_command == "list":
-                proposal_service.expire_stale()
-                if args.scope == "active":
-                    proposals = proposal_service.list_active_proposals()
-                elif args.scope == "approved":
-                    proposals = proposal_service.list_approved_proposals()
-                else:
-                    proposals = proposal_service.list_proposals()
-                proposals = sort_items(proposals, args.sort)
-                page = slice_items(proposals, args.limit, args.offset)
-                _print_lines(list_header_lines(args.scope, proposals, page, args.limit, args.offset, args.sort))
+            params = saved.params
+            if saved.kind == "analysis_outcomes":
+                _print_lines(outcome_analysis_lines(outcome_analysis_service.summarize_outcomes(params.get("group_by", "market"), params.get("since_hours"))))
+            elif saved.kind == "analysis_learning":
+                _print_lines(outcome_analysis_lines(outcome_analysis_service.summarize_learning(params.get("group_by", "category"), params.get("since_hours"))))
+            elif saved.kind == "alerts_list":
+                state = params.get("state")
+                _print_lines(alert_lines(notifications_service.list_alerts(params.get("watchlist_only", False), None if state is None else AlertState(state))))
+            elif saved.kind == "proposals_list":
+                scope = params.get("scope", "all")
+                proposals = proposal_service.list_proposals() if scope == "all" else (
+                    proposal_service.list_active_proposals() if scope == "active" else proposal_service.list_approved_proposals()
+                )
+                proposals = sort_items(proposals, params.get("sort", "updated_desc"))
+                page = slice_items(proposals, int(params.get("limit", 20)), int(params.get("offset", 0)))
+                _print_lines(list_header_lines(scope, proposals, page, int(params.get("limit", 20)), int(params.get("offset", 0)), params.get("sort", "updated_desc")))
                 for proposal in page:
                     print(proposal_summary_line(proposal))
-                return 0
-            if args.command == "proposals" and args.proposals_command == "latest-approved":
-                proposal = proposal_service.latest_approved_proposal()
-                if proposal is None:
-                    print("no_approved_proposal")
-                else:
-                    _print_lines(
-                        latest_lookup_lines(
-                            "latest_approved_proposal",
-                            proposal.proposal_id,
-                            proposal_summary_line(proposal),
-                        )
-                    )
-                return 0
-            if args.command == "proposals" and args.proposals_command == "probability":
-                _print_lines(probability_snapshot_lines(proposal_service.latest_probability_snapshot_for_proposal(args.id)))
-                return 0
-            if args.command == "proposals" and args.proposals_command == "compare":
-                _print_lines(probability_drift_lines(proposal_service.compare_probability_snapshots_for_proposal(args.id)))
-                return 0
-            if args.command == "proposals" and args.proposals_command == "decision-review":
-                _print_lines(decision_review_lines(decision_review_service.create_for_proposal(args.id)))
-                return 0
-            if args.command == "proposals" and args.proposals_command == "execution-evaluation":
-                _print_lines(execution_evaluation_lines(execution_evaluation_service.evaluate_proposal(args.id)))
-                return 0
-            if args.command == "proposals" and args.proposals_command == "research":
-                _print_lines(research_summary_lines(proposal_service.latest_probability_snapshot_for_proposal(args.id)))
-                return 0
-            if args.command == "proposals" and args.proposals_command == "show":
-                proposal = proposal_service.latest_proposal_state(args.id)
-                _print_lines(proposal_detail_lines(proposal))
-                return 0
-            if args.command == "proposals" and args.proposals_command == "reviews":
-                _print_lines(review_lines(proposal_service.list_review_history(args.id)))
-                return 0
-            if args.command == "proposals" and args.proposals_command == "audits":
-                _print_lines(audit_lines(proposal_service.list_audit_history(args.id)))
-                return 0
-            if args.command == "proposals" and args.proposals_command == "reject":
-                proposal = proposal_service.reject(args.id, actor="cli")
-                print(f"{proposal.proposal_id} {proposal.status.value}")
-                return 0
-            if args.command == "proposals" and args.proposals_command == "edit-size":
-                proposal = proposal_service.edit_size(args.id, args.amount, actor="cli")
-                print(f"{proposal.proposal_id} size={proposal.current_size_usd:.2f}")
-                return 0
-            if args.command == "proposals" and args.proposals_command == "edit-price":
-                proposal = proposal_service.edit_price(args.id, args.price, actor="cli")
-                print(f"{proposal.proposal_id} price={proposal.current_limit_price:.4f}")
-                return 0
-            if args.command == "proposals" and args.proposals_command == "approve":
-                proposal = proposal_service.approve(
-                    settings,
-                    args.id,
-                    actor="cli",
-                    open_positions=0,
-                    unresolved_exposure_usd=0.0,
-                    theme_exposure_usd=0.0,
+            elif saved.kind == "intents_list":
+                scope = params.get("scope", "all")
+                intents = execution_service.list_all_intents() if scope == "all" else (
+                    execution_service.list_active_intents() if scope == "active" else execution_service.list_terminal_intents()
                 )
-                print(
-                    f"{proposal.proposal_id} {proposal.status.value} "
-                    f"market_price={proposal.market_price:.4f} limit={proposal.current_limit_price:.4f}"
-                )
-                return 0
-            if args.command == "intents" and args.intents_command == "list":
-                if args.scope == "active":
-                    intents = execution_service.list_active_intents()
-                elif args.scope == "terminal":
-                    intents = execution_service.list_terminal_intents()
-                else:
-                    intents = execution_service.list_all_intents()
-                intents = sort_items(intents, args.sort)
-                page = slice_items(intents, args.limit, args.offset)
-                _print_lines(list_header_lines(args.scope, intents, page, args.limit, args.offset, args.sort))
+                intents = sort_items(intents, params.get("sort", "updated_desc"))
+                page = slice_items(intents, int(params.get("limit", 20)), int(params.get("offset", 0)))
+                _print_lines(list_header_lines(scope, intents, page, int(params.get("limit", 20)), int(params.get("offset", 0)), params.get("sort", "updated_desc")))
                 for intent in page:
                     print(intent_summary_line(intent))
-                return 0
-            if args.command == "intents" and args.intents_command == "show":
-                intent = execution_service.latest_intent_state(args.id)
-                _print_lines(intent_detail_lines(intent))
-                return 0
-            if args.command == "intents" and args.intents_command == "latest-for-proposal":
-                intent = execution_service.latest_active_intent(args.proposal_id)
-                if intent is None:
-                    print("no_active_intent")
-                else:
-                    _print_lines(latest_lookup_lines("latest_active_intent", intent.intent_id, intent_summary_line(intent)))
-                return 0
-            if args.command == "intents" and args.intents_command == "latest-terminal":
-                intent = execution_service.latest_terminal_intent()
-                if intent is None:
-                    print("no_terminal_intent")
-                else:
-                    _print_lines(
-                        latest_lookup_lines("latest_terminal_intent", intent.intent_id, intent_summary_line(intent))
-                    )
-                return 0
-            if args.command == "intents" and args.intents_command == "reviews":
-                _print_lines(review_lines(execution_service.list_review_history(args.id)))
-                return 0
-            if args.command == "intents" and args.intents_command == "audits":
-                _print_lines(audit_lines(execution_service.list_audit_history(args.id)))
-                return 0
-            if args.command == "intents" and args.intents_command == "simulate":
-                outcome = execution_service.simulate_intent(
-                    args.id,
-                    actor="cli",
-                    best_bid=args.best_bid,
-                    best_ask=args.best_ask,
-                    ttl_ms=args.ttl_ms,
-                    cancel_after_ms=args.cancel_after_ms,
-                    base_latency_ms=args.base_latency_ms,
-                )
-                print(
-                    f"intent={args.id} stage={outcome.stage} accepted={outcome.accepted} "
-                    f"reference_price={outcome.reference_price:.4f} "
-                    f"best_bid={'-' if outcome.best_bid is None else f'{outcome.best_bid:.4f}'} "
-                    f"best_ask={'-' if outcome.best_ask is None else f'{outcome.best_ask:.4f}'} "
-                    f"simulated_price="
-                    f"{'-' if outcome.simulated_price is None else f'{outcome.simulated_price:.4f}'} "
-                    f"slippage_bps={'-' if outcome.slippage_bps is None else f'{outcome.slippage_bps:.2f}'} "
-                    f"latency_ms={'-' if outcome.latency_ms is None else outcome.latency_ms} "
-                    f"completion_reason={outcome.completion_reason or '-'}"
-                )
-                return 0
-            if args.command == "intents" and args.intents_command == "executions":
-                _print_lines(execution_history_lines(execution_service.list_execution_history(args.id)))
-                return 0
-            if args.command == "intents" and args.intents_command == "timeline":
-                _print_lines(execution_timeline_lines(execution_service.list_execution_timeline(args.id)))
-                return 0
-            if args.command == "intents" and args.intents_command == "evaluate":
-                _print_lines(execution_evaluation_lines(execution_evaluation_service.evaluate_intent(args.id)))
-                return 0
-            if args.command == "intents" and args.intents_command == "simulation-summary":
-                if args.intent_id:
-                    _print_lines(simulation_summary_lines(execution_service.simulation_summary_for_intent(args.intent_id)))
-                else:
-                    _print_lines(simulation_summary_lines(execution_service.simulation_summary_overall()))
-                return 0
-            if args.command == "intents" and args.intents_command == "latest-simulated":
-                _print_lines(latest_execution_lines(execution_service.latest_simulated_execution_overall()))
-                return 0
-            if args.command == "safety" and args.safety_command == "inspect":
-                snapshot = build_runtime_safety_snapshot(
-                    settings,
-                    args.profile,
-                    execution_service.execution_adapter,
-                    open_positions=position_repository.count_open(),
-                    unresolved_exposure_usd=position_repository.unresolved_exposure(),
-                )
-                _print_lines(runtime_safety_lines(snapshot, include_exposure=False))
-                return 0
-            if args.command == "health" and args.health_command == "inspect":
-                snapshot = build_runtime_safety_snapshot(
-                    settings,
-                    args.profile,
-                    execution_service.execution_adapter,
-                    open_positions=position_repository.count_open(),
-                    unresolved_exposure_usd=position_repository.unresolved_exposure(),
-                )
-                _print_lines(runtime_safety_lines(snapshot, include_exposure=True))
-                return 0
-            if args.command == "portfolio" and args.portfolio_command == "summary":
-                _print_lines(analytics_summary_lines(analytics_service.summarize("portfolio", args.since_hours)))
-                return 0
-            if args.command == "session" and args.session_command == "summary":
-                _print_lines(analytics_summary_lines(analytics_service.summarize("session", args.since_hours)))
-                return 0
-            if args.command == "watchlist" and args.watchlist_command == "add":
-                entry = notifications_service.add_watch(WatchTargetType(args.type), args.id, args.label)
-                _print_lines(watchlist_lines([entry]))
-                return 0
-            if args.command == "watchlist" and args.watchlist_command == "remove":
-                notifications_service.remove_watch(WatchTargetType(args.type), args.id)
-                print(f"removed {args.type}:{args.id}")
-                return 0
-            if args.command == "watchlist" and args.watchlist_command == "list":
-                target_type = None if args.type is None else WatchTargetType(args.type)
-                _print_lines(watchlist_lines(notifications_service.list_watchlist(target_type)))
-                return 0
-            if args.command == "alerts" and args.alerts_command == "scan":
-                _print_lines(alert_lines(notifications_service.scan()))
-                return 0
-            if args.command == "alerts" and args.alerts_command == "list":
-                state = None if args.state is None else AlertState(args.state)
-                _print_lines(alert_lines(notifications_service.list_alerts(watchlist_only=args.watchlist_only, state=state)))
-                return 0
-            if args.command == "alerts" and args.alerts_command == "acknowledge":
-                _print_lines(alert_lines([notifications_service.acknowledge_alert(args.id)]))
-                return 0
-            if args.command == "alerts" and args.alerts_command == "dismiss":
-                _print_lines(alert_lines([notifications_service.dismiss_alert(args.id)]))
-                return 0
-            if args.command == "alerts" and args.alerts_command == "resolve":
-                _print_lines(alert_lines([notifications_service.resolve_alert(args.id)]))
-                return 0
-            if args.command == "markets" and args.markets_command == "probability":
-                _print_lines(probability_snapshot_lines(proposal_service.latest_probability_snapshot_for_market(args.id)))
-                return 0
-            if args.command == "markets" and args.markets_command == "compare":
-                _print_lines(probability_drift_lines(proposal_service.compare_probability_snapshots_for_market(args.id)))
-                return 0
-            if args.command == "markets" and args.markets_command == "decision-review":
-                _print_lines(decision_review_lines(decision_review_service.create_for_market(args.id)))
-                return 0
-            if args.command == "markets" and args.markets_command == "research":
-                _print_lines(research_summary_lines(proposal_service.latest_probability_snapshot_for_market(args.id)))
-                return 0
-            if args.command == "markets" and args.markets_command == "live":
-                _print_lines(market_data_lines(market_data_service.inspect_snapshot(args.id, refresh=args.refresh)))
-                return 0
-            if args.command == "markets" and args.markets_command == "catalog":
-                active, closed = _catalog_scope_to_flags(args.scope)
-                _print_lines(
-                    market_catalog_lines(
-                        market_catalog_service.list_markets(limit=args.limit, active=active, closed=closed)
-                    )
-                )
-                return 0
-            if args.command == "markets" and args.markets_command == "scan":
-                _print_lines(
-                    market_opportunity_lines(
-                        market_opportunity_scanner.scan(
-                            settings,
-                            min_edge=args.min_edge,
-                            min_liquidity=args.min_liquidity,
-                            limit=args.limit,
-                        )
-                    )
-                )
-                return 0
-            if args.command == "markets" and args.markets_command == "draft-opportunities":
-                _print_lines(
-                    opportunity_draft_lines(
-                        opportunity_bridge_service.draft_opportunities(
-                            settings,
-                            min_edge=args.min_edge,
-                            min_liquidity=args.min_liquidity,
-                            limit=args.limit,
-                        )
-                    )
-                )
-                return 0
-            if args.command == "markets" and args.markets_command == "cache":
-                snapshot = market_data_service.latest_cached_snapshot(args.id)
-                if snapshot is None:
-                    print("no_cached_market_snapshot")
-                else:
-                    _print_lines(market_data_lines(snapshot))
-                return 0
-            if args.command == "markets" and args.markets_command == "stream-once":
-                _print_lines(market_data_lines(asyncio.run(realtime_market_feed_service.refresh_from_websocket(args.id))))
-                return 0
-            if args.command == "events" and args.events_command == "catalog":
-                active, closed = _catalog_scope_to_flags(args.scope)
-                _print_lines(
-                    event_catalog_lines(
-                        market_catalog_service.list_events(limit=args.limit, active=active, closed=closed)
-                    )
-                )
-                return 0
-            if args.command == "analysis" and args.analysis_command == "outcomes":
-                _print_lines(outcome_analysis_lines(outcome_analysis_service.summarize_outcomes(args.group_by, args.since_hours)))
-                return 0
-            if args.command == "analysis" and args.analysis_command == "learning-summary":
-                _print_lines(outcome_analysis_lines(outcome_analysis_service.summarize_learning(args.group_by, args.since_hours)))
-                return 0
-            if args.command == "analysis" and args.analysis_command == "latest":
-                snapshot = outcome_analysis_service.latest_snapshot(args.scope, args.group_by)
-                if snapshot is None:
-                    print("no_analysis_snapshot")
-                else:
-                    _print_lines(outcome_analysis_lines(snapshot))
-                return 0
-            if args.command == "views" and args.views_command == "save":
-                saved = saved_view_service.save(args.name, args.kind, json.loads(args.params))
-                _print_lines(saved_view_lines([saved]))
-                return 0
-            if args.command == "views" and args.views_command == "list":
-                _print_lines(saved_view_lines(saved_view_service.list_all()))
-                return 0
-            if args.command == "views" and args.views_command == "show":
-                saved = saved_view_service.get(args.name)
-                _print_lines(saved_view_lines([] if saved is None else [saved]))
-                return 0
-            if args.command == "views" and args.views_command == "run":
-                saved = saved_view_service.get(args.name)
-                if saved is None:
-                    print("no_saved_view")
-                    return 0
-                params = saved.params
-                if saved.kind == "analysis_outcomes":
-                    _print_lines(outcome_analysis_lines(outcome_analysis_service.summarize_outcomes(params.get("group_by", "market"), params.get("since_hours"))))
-                elif saved.kind == "analysis_learning":
-                    _print_lines(outcome_analysis_lines(outcome_analysis_service.summarize_learning(params.get("group_by", "category"), params.get("since_hours"))))
-                elif saved.kind == "alerts_list":
-                    state = params.get("state")
-                    _print_lines(alert_lines(notifications_service.list_alerts(params.get("watchlist_only", False), None if state is None else AlertState(state))))
-                elif saved.kind == "proposals_list":
-                    scope = params.get("scope", "all")
-                    proposals = proposal_service.list_proposals() if scope == "all" else (
-                        proposal_service.list_active_proposals() if scope == "active" else proposal_service.list_approved_proposals()
-                    )
-                    proposals = sort_items(proposals, params.get("sort", "updated_desc"))
-                    page = slice_items(proposals, int(params.get("limit", 20)), int(params.get("offset", 0)))
-                    _print_lines(list_header_lines(scope, proposals, page, int(params.get("limit", 20)), int(params.get("offset", 0)), params.get("sort", "updated_desc")))
-                    for proposal in page:
-                        print(proposal_summary_line(proposal))
-                elif saved.kind == "intents_list":
-                    scope = params.get("scope", "all")
-                    intents = execution_service.list_all_intents() if scope == "all" else (
-                        execution_service.list_active_intents() if scope == "active" else execution_service.list_terminal_intents()
-                    )
-                    intents = sort_items(intents, params.get("sort", "updated_desc"))
-                    page = slice_items(intents, int(params.get("limit", 20)), int(params.get("offset", 0)))
-                    _print_lines(list_header_lines(scope, intents, page, int(params.get("limit", 20)), int(params.get("offset", 0)), params.get("sort", "updated_desc")))
-                    for intent in page:
-                        print(intent_summary_line(intent))
-                return 0
-            if args.command == "export" and args.export_command == "decision-review":
-                print(reporting_service.write_export(reporting_service.export_decision_review(args.proposal_id), args.output))
-                return 0
-            if args.command == "export" and args.export_command == "execution-evaluation":
-                print(reporting_service.write_export(reporting_service.export_execution_evaluation(args.proposal_id, args.intent_id), args.output))
-                return 0
-            if args.command == "export" and args.export_command == "outcome-analysis":
-                print(reporting_service.write_export(reporting_service.export_outcome_analysis(args.scope, args.group_by, args.since_hours), args.output))
-                return 0
-            if args.command == "digest" and args.digest_command == "daily":
-                _print_lines(digest_lines(reporting_service.build_digest("daily", args.since_hours)))
-                return 0
-            if args.command == "digest" and args.digest_command == "session":
-                _print_lines(digest_lines(reporting_service.build_digest("session", args.since_hours)))
-                return 0
-        finally:
-            connection.close()
+            return 0
+        if args.command == "export" and args.export_command == "decision-review":
+            print(reporting_service.write_export(reporting_service.export_decision_review(args.proposal_id), args.output))
+            return 0
+        if args.command == "export" and args.export_command == "execution-evaluation":
+            print(reporting_service.write_export(reporting_service.export_execution_evaluation(args.proposal_id, args.intent_id), args.output))
+            return 0
+        if args.command == "export" and args.export_command == "outcome-analysis":
+            print(reporting_service.write_export(reporting_service.export_outcome_analysis(args.scope, args.group_by, args.since_hours), args.output))
+            return 0
+        if args.command == "digest" and args.digest_command == "daily":
+            _print_lines(digest_lines(reporting_service.build_digest("daily", args.since_hours)))
+            return 0
+        if args.command == "digest" and args.digest_command == "session":
+            _print_lines(digest_lines(reporting_service.build_digest("session", args.since_hours)))
+            return 0
     finally:
-        gamma_client.close()
-        client.close()
+        container.close()
     print(f"command={args.command} mode={settings.mode.value}")
     return 0
 
