@@ -32,6 +32,7 @@ market snapshot + signal + probability
 
 - Proposal lifecycle is stored in SQLite and controlled through explicit service methods.
 - Persistence exists for milestone-1 entities and audit/proposal records needed by the core.
+- SQLite schema evolution is versioned through in-repo migrations under `bot/storage/migrations/`, and startup applies pending migrations automatically.
 - Public live market data is retrieved through adapter-level Gamma/CLOB clients and cached locally as market snapshots.
 - Approve revalidation uses fresh public market metadata and public CLOB `/book` + `/midpoint` pricing when a snapshot provider is configured, while `/price` is stored as explicit reference-price metadata.
 - Public market-data failures are fail-closed: stale, malformed, or unavailable market data blocks approval.
