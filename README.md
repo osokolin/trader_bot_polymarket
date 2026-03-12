@@ -164,8 +164,9 @@ Module entrypoint works as well:
 
 Public market-data integration uses:
 - Gamma API for market/event metadata
-- CLOB REST endpoints for public order book and last-trade pricing
-- public market WebSocket updates with reconnect/backoff
+- CLOB REST endpoints for public `/book`, `/midpoint`, and `/price`
+- public market WebSocket updates with reconnect/backoff and receive-timeout fail-closed handling
+- cache-first market inspection with explicit refresh
 
 Approval revalidation now fails closed if public market data is stale, malformed, or unavailable.
 This integration does not enable live trading:

@@ -17,8 +17,9 @@ class GammaMarketMetadata:
 class ClobOrderBook:
     asset_id: str
     snapshot: OrderBookSnapshot
-    last_trade_price: float | None
+    reference_price: float | None
     raw_payload: dict[str, object]
+    pricing_metadata: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -30,7 +31,7 @@ class ClobMarketUpdate:
     spread_pct: float
     timestamp: datetime
     market_id: str | None = None
-    last_trade_price: float | None = None
+    reference_price: float | None = None
     sequence_id: str | None = None
     raw_payload: dict[str, object] = field(default_factory=dict)
 

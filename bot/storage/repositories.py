@@ -243,8 +243,9 @@ class MarketDataSnapshotRepository:
             """
             INSERT OR REPLACE INTO market_data_snapshots (
                 snapshot_id, market_id, asset_id, source, market_payload_json, orderbook_payload_json,
-                websocket_payload_json, last_trade_price, data_age_seconds, fetched_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                websocket_payload_json, observed_at, stale, reference_price, pricing_metadata_json,
+                data_age_seconds, fetched_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 snapshot.snapshot_id,
@@ -254,7 +255,10 @@ class MarketDataSnapshotRepository:
                 json.dumps(self._market_payload(snapshot.market)),
                 json.dumps(self._orderbook_payload(snapshot.orderbook)),
                 json.dumps(snapshot.websocket_payload),
-                snapshot.last_trade_price,
+                snapshot.observed_at.isoformat(),
+                1 if snapshot.stale else 0,
+                snapshot.reference_price,
+                json.dumps(snapshot.pricing_metadata, sort_keys=True),
                 snapshot.data_age_seconds,
                 snapshot.fetched_at.isoformat(),
             ),
@@ -318,10 +322,13 @@ class MarketDataSnapshotRepository:
                 spread_pct=orderbook_payload["spread_pct"],
                 timestamp=datetime.fromisoformat(orderbook_payload["timestamp"]),
             ),
+            observed_at=datetime.fromisoformat(row["observed_at"]),
             fetched_at=datetime.fromisoformat(row["fetched_at"]),
             source=row["source"],
+            stale=bool(row["stale"]),
             data_age_seconds=row["data_age_seconds"],
-            last_trade_price=row["last_trade_price"],
+            reference_price=row["reference_price"],
+            pricing_metadata=json.loads(row["pricing_metadata_json"]),
             websocket_payload=json.loads(row["websocket_payload_json"]),
         )
 

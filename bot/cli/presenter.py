@@ -299,7 +299,10 @@ def market_data_lines(snapshot) -> list[str]:
             ("midpoint", f"{snapshot.orderbook.midpoint:.4f}"),
             ("spread_pct", f"{snapshot.orderbook.spread_pct:.6f}"),
             ("orderbook_timestamp", snapshot.orderbook.timestamp.isoformat()),
-            ("last_trade_price", "-" if snapshot.last_trade_price is None else f"{snapshot.last_trade_price:.4f}"),
+            ("observed_at", snapshot.observed_at.isoformat()),
+            ("stale", snapshot.stale),
+            ("reference_price", "-" if snapshot.reference_price is None else f"{snapshot.reference_price:.4f}"),
+            ("pricing_status", snapshot.pricing_metadata.get("price_status", "-")),
             ("websocket_payload_keys", ",".join(sorted(snapshot.websocket_payload.keys())) or "-"),
         ]
     )

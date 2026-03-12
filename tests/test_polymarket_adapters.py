@@ -5,31 +5,38 @@ import tempfile
 import unittest
 from datetime import timedelta
 from pathlib import Path
+from contextlib import redirect_stdout
+from io import StringIO
+from unittest.mock import patch
 
 import httpx
 
-from bot.adapters.polymarket.client import (
-    ClobMarketDataClient,
-    GammaApiClient,
+from bot.adapters.polymarket.clob_client import ClobMarketDataClient, PolymarketOrderBookAdapter
+from bot.adapters.polymarket.errors import (
     PolymarketHTTPError,
-    PolymarketMarketMetadataAdapter,
     PolymarketParseError,
     PolymarketStaleDataError,
     PolymarketTransportError,
 )
-from bot.adapters.polymarket.market_stream import PolymarketOrderBookAdapter, PublicMarketWebSocketClient
+from bot.adapters.polymarket.gamma_client import GammaApiClient, PolymarketMarketMetadataAdapter
 from bot.adapters.polymarket.models import OrderRequest
+from bot.adapters.polymarket.websocket_market import PublicMarketWebSocketClient
 from bot.adapters.polymarket.trading import PaperExecutionAdapter, SemiAutoExecutionAdapter
+from bot.cli.app import main
 from bot.config.loader import load_settings
 from bot.domain.enums import ProposalStatus, SourceType
-from bot.domain.models import Market, ProbabilityEstimate
+from bot.domain.models import Market, MarketDataSnapshot, OrderBookSnapshot, ProbabilityEstimate
 from bot.services.audit_log import AuditLogService
-from bot.services.market_data import LiveMarketDataService, PolymarketApprovalSnapshotProvider
+from bot.services.approval_snapshot_provider import PolymarketApprovalSnapshotProvider
+from bot.services.market_sync import LiveMarketDataService
+from bot.services.realtime_market_feed import RealtimeMarketFeedService
 from bot.services.probability_engine import EdgeAdjustedProbabilityProvider
 from bot.services.proposal_engine import ProposalEngine
 from bot.services.proposal_lifecycle import ProposalLifecycleError, ProposalLifecycleService
 from bot.storage.db import Database
 from bot.storage.repositories import AuditRepository, MarketDataSnapshotRepository, ProposalRepository
+from bot.ui import OperatorDashboardApp, OperatorDashboardServices
+from bot.utils.time import utc_now
 
 
 class _FakeWebSocket:
@@ -53,6 +60,48 @@ class _FakeWebSocket:
         if isinstance(next_item, Exception):
             raise next_item
         return next_item
+
+
+class _HangingWebSocket(_FakeWebSocket):
+    async def recv(self):
+        await __import__("asyncio").sleep(0.02)
+        return await super().recv()
+
+
+def _snapshot(market_id: str = "mkt_1", source: str = "cache", age_seconds: int = 0) -> MarketDataSnapshot:
+    now = utc_now() - timedelta(seconds=age_seconds)
+    return MarketDataSnapshot(
+        snapshot_id="msnap_1",
+        market_id=market_id,
+        asset_id="asset_1",
+        market=Market(
+            market_id=market_id,
+            title="Will BTC close above 100k?",
+            category="crypto",
+            liquidity_usd=15000,
+            spread_pct=0.02,
+            resolution_time=utc_now() + timedelta(days=30),
+            rules_text="Clear rules",
+            rules_confidence=0.95,
+            has_orderbook=True,
+        ),
+        orderbook=OrderBookSnapshot(
+            market_id=market_id,
+            best_bid=0.48,
+            best_ask=0.52,
+            midpoint=0.5,
+            spread_pct=0.08,
+            timestamp=now,
+        ),
+        observed_at=now,
+        fetched_at=utc_now(),
+        source=source,
+        stale=age_seconds > 120,
+        data_age_seconds=age_seconds,
+        reference_price=0.505,
+        pricing_metadata={"price_status": "available"},
+        websocket_payload={},
+    )
 
 
 class PolymarketAdaptersTest(unittest.TestCase):
@@ -100,7 +149,10 @@ class PolymarketAdaptersTest(unittest.TestCase):
         client.close()
 
     def test_orderbook_adapter_maps_public_clob_book(self) -> None:
+        seen_paths = []
+
         def handler(request: httpx.Request) -> httpx.Response:
+            seen_paths.append(request.url.path)
             if request.url.path == "/book":
                 return httpx.Response(
                     200,
@@ -111,7 +163,9 @@ class PolymarketAdaptersTest(unittest.TestCase):
                         "timestamp": "2026-03-11T09:00:00Z",
                     },
                 )
-            if request.url.path == "/last-trade-price":
+            if request.url.path == "/midpoint":
+                return httpx.Response(200, json={"midpoint": "0.5"})
+            if request.url.path == "/price":
                 return httpx.Response(200, json={"price": "0.51"})
             raise AssertionError(f"unexpected path: {request.url.path}")
 
@@ -119,7 +173,8 @@ class PolymarketAdaptersTest(unittest.TestCase):
         adapter = PolymarketOrderBookAdapter(client)
         book = adapter.get_orderbook("asset_1", market_id="mkt_1")
         self.assertEqual(book.snapshot.midpoint, 0.5)
-        self.assertEqual(book.last_trade_price, 0.51)
+        self.assertEqual(book.reference_price, 0.51)
+        self.assertEqual(seen_paths, ["/book", "/midpoint", "/price"])
         client.close()
 
     def test_gamma_client_raises_transport_error_on_timeout(self) -> None:
@@ -184,7 +239,9 @@ class PolymarketAdaptersTest(unittest.TestCase):
                         "timestamp": "2026-03-11T09:00:00+00:00",
                     },
                 )
-            if request.url.path == "/last-trade-price":
+            if request.url.path == "/midpoint":
+                return httpx.Response(200, json={"midpoint": "0.5"})
+            if request.url.path == "/price":
                 return httpx.Response(200, json={"price": "0.505"})
             raise AssertionError(f"unexpected path: {request.url.path}")
 
@@ -205,6 +262,8 @@ class PolymarketAdaptersTest(unittest.TestCase):
                 self.assertIsNotNone(cached)
                 self.assertEqual(cached.snapshot_id, snapshot.snapshot_id)
                 self.assertEqual(cached.asset_id, "asset_1")
+                self.assertEqual(cached.reference_price, 0.505)
+                self.assertFalse(cached.stale)
             finally:
                 connection.close()
                 gamma_client.close()
@@ -242,7 +301,9 @@ class PolymarketAdaptersTest(unittest.TestCase):
                         "timestamp": "2026-03-11T09:00:00Z",
                     },
                 )
-            if request.url.path == "/last-trade-price":
+            if request.url.path == "/midpoint":
+                return httpx.Response(200, json={"midpoint": "0.5"})
+            if request.url.path == "/price":
                 return httpx.Response(200, json={"price": "0.50"})
             raise AssertionError(f"unexpected path: {request.url.path}")
 
@@ -257,6 +318,25 @@ class PolymarketAdaptersTest(unittest.TestCase):
         gamma_client.close()
         clob_client.close()
 
+    def test_live_market_data_service_rejects_stale_cached_snapshot_when_requested(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            database = Database(Path(tmp_dir) / "bot.db")
+            database.initialize()
+            connection = database.connect()
+            try:
+                repository = MarketDataSnapshotRepository(connection)
+                repository.save(_snapshot(age_seconds=3600))
+                service = LiveMarketDataService(
+                    PolymarketMarketMetadataAdapter(self._mock_gamma_client(lambda request: httpx.Response(200, json=[]))),
+                    PolymarketOrderBookAdapter(self._mock_clob_client(lambda request: httpx.Response(200, json={}))),
+                    repository,
+                    stale_after_seconds=120,
+                )
+                with self.assertRaises(PolymarketStaleDataError):
+                    service.latest_cached_snapshot("mkt_1", fail_on_stale=True)
+            finally:
+                connection.close()
+
     def test_public_market_websocket_reconnects_and_parses_update(self) -> None:
         calls = []
 
@@ -266,7 +346,7 @@ class PolymarketAdaptersTest(unittest.TestCase):
                 raise RuntimeError("temporary network issue")
             return _FakeWebSocket(
                 [
-                    '[{"asset_id":"asset_1","best_bid":"0.49","best_ask":"0.51","timestamp":"2026-03-11T09:00:00Z","last_trade_price":"0.50"}]'
+                    '[{"asset_id":"asset_1","best_bid":"0.49","best_ask":"0.51","timestamp":"2026-03-11T09:00:00Z","price":"0.50"}]'
                 ]
             )
 
@@ -286,6 +366,30 @@ class PolymarketAdaptersTest(unittest.TestCase):
         self.assertEqual(updates[0].midpoint, 0.5)
         self.assertEqual(sleeps, [0.25])
 
+    def test_public_market_websocket_times_out_and_reconnects(self) -> None:
+        attempts = []
+
+        async def connector(url: str):
+            attempts.append(url)
+            if len(attempts) == 1:
+                return _HangingWebSocket(["[]"])
+            return _FakeWebSocket(['[{"asset_id":"asset_1","best_bid":"0.49","best_ask":"0.51","timestamp":"2026-03-11T09:00:00Z","price":"0.50"}]'])
+
+        sleeps = []
+
+        async def fake_sleep(delay: float) -> None:
+            sleeps.append(delay)
+
+        client = PublicMarketWebSocketClient(
+            connector=connector,
+            sleep_func=fake_sleep,
+            recv_timeout_seconds=0.001,
+            max_reconnect_attempts=2,
+        )
+        updates = __import__("asyncio").run(client.stream_market(["asset_1"]))
+        self.assertEqual(len(updates), 1)
+        self.assertEqual(sleeps, [0.25])
+
     def test_public_market_websocket_rejects_malformed_payload(self) -> None:
         async def connector(url: str):
             return _FakeWebSocket(['{"asset_id":"asset_1","best_bid":"oops"}'])
@@ -293,6 +397,25 @@ class PolymarketAdaptersTest(unittest.TestCase):
         client = PublicMarketWebSocketClient(connector=connector)
         with self.assertRaises(PolymarketParseError):
             __import__("asyncio").run(client.stream_market(["asset_1"]))
+
+    def test_public_market_websocket_subscription_uses_expected_endpoint_and_asset_ids(self) -> None:
+        payloads = []
+
+        async def connector(url: str):
+            self.assertEqual(url, "wss://ws-subscriptions-clob.polymarket.com/ws/")
+            socket = _FakeWebSocket(['[{"asset_id":"asset_1","best_bid":"0.49","best_ask":"0.51","timestamp":"2026-03-11T09:00:00Z"}]'])
+            original_send = socket.send
+
+            async def wrapped_send(payload: str) -> None:
+                payloads.append(payload)
+                await original_send(payload)
+
+            socket.send = wrapped_send  # type: ignore[assignment]
+            return socket
+
+        client = PublicMarketWebSocketClient(connector=connector)
+        __import__("asyncio").run(client.stream_market(["asset_1"]))
+        self.assertEqual(payloads, ['{"asset_ids": ["asset_1"], "type": "market"}'])
 
     def test_approval_provider_fail_closed_on_live_market_error(self) -> None:
         def gamma_handler(request: httpx.Request) -> httpx.Response:
@@ -374,6 +497,88 @@ class PolymarketAdaptersTest(unittest.TestCase):
         self.assertEqual(stored.status, ProposalStatus.PENDING_MANUAL_CONFIRMATION)
         gamma_client.close()
         clob_client.close()
+
+    def test_cli_live_market_commands_use_cache_first_and_stream_service(self) -> None:
+        class FakeLiveMarketDataService:
+            instances = []
+
+            def __init__(self, *args, **kwargs) -> None:
+                self.calls = []
+                self.cached = _snapshot(source="cache", age_seconds=30)
+                self.stale_after_seconds = 120
+                FakeLiveMarketDataService.instances.append(self)
+
+            def inspect_snapshot(self, market_id: str, refresh: bool = False):
+                self.calls.append(("inspect", market_id, refresh))
+                return _snapshot(market_id=market_id, source="inspection" if refresh else "cache", age_seconds=30)
+
+            def latest_cached_snapshot(self, market_id: str, fail_on_stale: bool = False):
+                self.calls.append(("cache", market_id, fail_on_stale))
+                return self.cached
+
+        class FakeRealtimeMarketFeedService:
+            instances = []
+
+            def __init__(self, *args, **kwargs) -> None:
+                self.calls = []
+                FakeRealtimeMarketFeedService.instances.append(self)
+
+            async def refresh_from_websocket(self, market_id: str, max_messages: int = 1):
+                self.calls.append((market_id, max_messages))
+                return _snapshot(market_id=market_id, source="websocket", age_seconds=0)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "cli.db"
+            env = {"BOT_DATABASE_URL": f"sqlite:///{db_path}"}
+            with patch.dict(os.environ, env, clear=False), \
+                patch("bot.cli.app.LiveMarketDataService", FakeLiveMarketDataService), \
+                patch("bot.cli.app.RealtimeMarketFeedService", FakeRealtimeMarketFeedService):
+                out = StringIO()
+                with redirect_stdout(out):
+                    exit_code = main(["--config-dir", "config", "markets", "live", "mkt_cli"])
+                self.assertEqual(exit_code, 0)
+                self.assertIn("source: cache", out.getvalue())
+                self.assertEqual(FakeLiveMarketDataService.instances[-1].calls[0], ("inspect", "mkt_cli", False))
+
+                out = StringIO()
+                with redirect_stdout(out):
+                    exit_code = main(["--config-dir", "config", "markets", "stream-once", "mkt_cli"])
+                self.assertEqual(exit_code, 0)
+                self.assertIn("source: websocket", out.getvalue())
+                self.assertEqual(FakeRealtimeMarketFeedService.instances[-1].calls[0], ("mkt_cli", 1))
+
+    def test_ui_live_market_route_uses_cache_first_inspection(self) -> None:
+        class FakeMarketDataService:
+            def __init__(self) -> None:
+                self.calls = []
+
+            def inspect_snapshot(self, market_id: str, refresh: bool = False):
+                self.calls.append(("inspect", market_id, refresh))
+                return _snapshot(market_id=market_id, source="cache", age_seconds=20)
+
+            def latest_cached_snapshot(self, market_id: str, fail_on_stale: bool = False):
+                self.calls.append(("cache", market_id, fail_on_stale))
+                return _snapshot(market_id=market_id, source="cache", age_seconds=20)
+
+        fake_market_data = FakeMarketDataService()
+        app = OperatorDashboardApp(
+            OperatorDashboardServices(
+                proposal_service=object(),  # type: ignore[arg-type]
+                execution_service=object(),  # type: ignore[arg-type]
+                notifications_service=object(),  # type: ignore[arg-type]
+                decision_review_service=object(),  # type: ignore[arg-type]
+                execution_evaluation_service=object(),  # type: ignore[arg-type]
+                outcome_analysis_service=object(),  # type: ignore[arg-type]
+                saved_view_service=object(),  # type: ignore[arg-type]
+                reporting_service=object(),  # type: ignore[arg-type]
+                market_data_service=fake_market_data,  # type: ignore[arg-type]
+            )
+        )
+        status, body = app.render_response("/markets/live/mkt_ui")
+        self.assertEqual(status, "200 OK")
+        self.assertIn("Рыночные live-данные", body)
+        self.assertIn("обновить сейчас", body)
+        self.assertEqual(fake_market_data.calls[0], ("inspect", "mkt_ui", False))
 
     def test_execution_adapter_stays_non_autonomous(self) -> None:
         adapter = SemiAutoExecutionAdapter()
