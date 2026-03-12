@@ -547,6 +547,162 @@ class PolymarketAdaptersTest(unittest.TestCase):
                 self.assertIn("source: websocket", out.getvalue())
                 self.assertEqual(FakeRealtimeMarketFeedService.instances[-1].calls[0], ("mkt_cli", 1))
 
+    def test_cli_market_and_event_catalog_commands(self) -> None:
+        class FakeLiveMarketDataService:
+            def __init__(self, *args, **kwargs) -> None:
+                self.stale_after_seconds = 120
+
+            def inspect_snapshot(self, market_id: str, refresh: bool = False):
+                return _snapshot(market_id=market_id, source="cache", age_seconds=30)
+
+            def latest_cached_snapshot(self, market_id: str, fail_on_stale: bool = False):
+                return _snapshot(market_id=market_id, source="cache", age_seconds=30)
+
+        class FakeRealtimeMarketFeedService:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            async def refresh_from_websocket(self, market_id: str, max_messages: int = 1):
+                return _snapshot(market_id=market_id, source="websocket", age_seconds=0)
+
+        class FakeMarketCatalogService:
+            instances = []
+
+            def __init__(self, *args, **kwargs) -> None:
+                self.market_calls = []
+                self.event_calls = []
+                FakeMarketCatalogService.instances.append(self)
+
+            def list_markets(self, limit: int = 20, active: bool = True, closed: bool = False):
+                from bot.adapters.polymarket.models import GammaMarketSummary
+                self.market_calls.append((limit, active, closed))
+
+                return [
+                    GammaMarketSummary(
+                        market_id="mkt_cli_1",
+                        question="Will CPI print below consensus?",
+                        event_id="evt_macro",
+                        slug="cpi-below-consensus",
+                        category="macro",
+                        active=active,
+                        closed=closed,
+                        archived=False,
+                        enable_order_book=True,
+                        liquidity_usd=1234.0,
+                        volume_usd=5678.0,
+                    )
+                ][:limit]
+
+            def list_events(self, limit: int = 20, active: bool = True, closed: bool = False):
+                from bot.adapters.polymarket.models import GammaEventSummary
+                self.event_calls.append((limit, active, closed))
+
+                return [
+                    GammaEventSummary(
+                        event_id="evt_macro",
+                        title="Macro Calendar",
+                        slug="macro-calendar",
+                        active=active,
+                        closed=closed,
+                        archived=False,
+                        market_count=3,
+                    )
+                ][:limit]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "cli.db"
+            env = {"BOT_DATABASE_URL": f"sqlite:///{db_path}"}
+            with patch.dict(os.environ, env, clear=False), \
+                patch("bot.cli.app.LiveMarketDataService", FakeLiveMarketDataService), \
+                patch("bot.cli.app.RealtimeMarketFeedService", FakeRealtimeMarketFeedService), \
+                patch("bot.cli.app.MarketCatalogService", FakeMarketCatalogService):
+                out = StringIO()
+                with redirect_stdout(out):
+                    exit_code = main(["--config-dir", "config", "markets", "catalog", "--limit", "10"])
+                self.assertEqual(exit_code, 0)
+                self.assertIn("market_count: 1", out.getvalue())
+                self.assertIn("market_id=mkt_cli_1", out.getvalue())
+                self.assertIn("question=Will CPI print below consensus?", out.getvalue())
+                self.assertEqual(FakeMarketCatalogService.instances[-1].market_calls[-1], (10, True, False))
+
+                out = StringIO()
+                with redirect_stdout(out):
+                    exit_code = main(["--config-dir", "config", "events", "catalog", "--limit", "10"])
+                self.assertEqual(exit_code, 0)
+                self.assertIn("event_count: 1", out.getvalue())
+                self.assertIn("event_id=evt_macro", out.getvalue())
+                self.assertIn("title=Macro Calendar", out.getvalue())
+                self.assertEqual(FakeMarketCatalogService.instances[-1].event_calls[-1], (10, True, False))
+
+    def test_cli_catalog_closed_scope_semantics(self) -> None:
+        class FakeLiveMarketDataService:
+            def __init__(self, *args, **kwargs) -> None:
+                self.stale_after_seconds = 120
+
+        class FakeRealtimeMarketFeedService:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+        class FakeMarketCatalogService:
+            instances = []
+
+            def __init__(self, *args, **kwargs) -> None:
+                self.market_calls = []
+                self.event_calls = []
+                FakeMarketCatalogService.instances.append(self)
+
+            def list_markets(self, limit: int = 20, active: bool = True, closed: bool = False):
+                self.market_calls.append((limit, active, closed))
+                return []
+
+            def list_events(self, limit: int = 20, active: bool = True, closed: bool = False):
+                self.event_calls.append((limit, active, closed))
+                return []
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = Path(tmp_dir) / "cli.db"
+            env = {"BOT_DATABASE_URL": f"sqlite:///{db_path}"}
+            with patch.dict(os.environ, env, clear=False), \
+                patch("bot.cli.app.LiveMarketDataService", FakeLiveMarketDataService), \
+                patch("bot.cli.app.RealtimeMarketFeedService", FakeRealtimeMarketFeedService), \
+                patch("bot.cli.app.MarketCatalogService", FakeMarketCatalogService):
+                out = StringIO()
+                with redirect_stdout(out):
+                    exit_code = main(["--config-dir", "config", "markets", "catalog", "--scope", "closed"])
+                self.assertEqual(exit_code, 0)
+                self.assertEqual(FakeMarketCatalogService.instances[-1].market_calls[-1], (20, False, True))
+
+                out = StringIO()
+                with redirect_stdout(out):
+                    exit_code = main(["--config-dir", "config", "events", "catalog", "--scope", "closed"])
+                self.assertEqual(exit_code, 0)
+                self.assertEqual(FakeMarketCatalogService.instances[-1].event_calls[-1], (20, False, True))
+
+    def test_market_catalog_service_raises_structured_parse_error_on_malformed_numeric_payload(self) -> None:
+        class FakeGammaClient:
+            def list_markets(self, limit: int = 20, active: bool = True, closed: bool = False):
+                return [
+                    {
+                        "id": "mkt_bad",
+                        "question": "Bad numeric payload",
+                        "category": "crypto",
+                        "active": True,
+                        "closed": False,
+                        "archived": False,
+                        "enableOrderBook": True,
+                        "liquidityClob": "not-a-number",
+                    }
+                ]
+
+            def list_events(self, limit: int = 20, active: bool = True, closed: bool = False):
+                return []
+
+        from bot.services.market_catalog import MarketCatalogService
+
+        service = MarketCatalogService(FakeGammaClient())  # type: ignore[arg-type]
+        with self.assertRaises(PolymarketParseError):
+            service.list_markets()
+
     def test_ui_live_market_route_uses_cache_first_inspection(self) -> None:
         class FakeMarketDataService:
             def __init__(self) -> None:

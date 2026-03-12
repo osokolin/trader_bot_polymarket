@@ -15,6 +15,7 @@ from bot.cli.presenter import (
     alert_lines,
     audit_lines,
     decision_review_lines,
+    event_catalog_lines,
     digest_lines,
     execution_evaluation_lines,
     execution_timeline_lines,
@@ -27,6 +28,7 @@ from bot.cli.presenter import (
     market_data_lines,
     latest_execution_lines,
     list_header_lines,
+    market_catalog_lines,
     proposal_detail_lines,
     probability_drift_lines,
     proposal_summary_line,
@@ -48,6 +50,7 @@ from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService
 from bot.services.approval_snapshot_provider import PolymarketApprovalSnapshotProvider
+from bot.services.market_catalog import MarketCatalogService
 from bot.services.market_sync import LiveMarketDataService
 from bot.services.realtime_market_feed import RealtimeMarketFeedService
 from bot.services.outcome_analysis import OutcomeAnalysisService
@@ -73,6 +76,16 @@ from bot.storage.repositories import (
     WatchlistRepository,
 )
 from bot.ui import OperatorDashboardApp, OperatorDashboardServices, serve_ui
+
+
+def _catalog_scope_to_flags(scope: str) -> tuple[bool, bool]:
+    if scope == "active":
+        return True, False
+    if scope == "closed":
+        return False, True
+    if scope == "all":
+        return True, True
+    raise ValueError(f"Unsupported catalog scope: {scope}")
 
 
 def _add_list_options(parser: argparse.ArgumentParser, default_sort: str = "updated_desc") -> None:
@@ -241,10 +254,19 @@ def build_parser() -> argparse.ArgumentParser:
     market_live = markets_sub.add_parser("live")
     market_live.add_argument("id")
     market_live.add_argument("--refresh", action="store_true")
+    market_catalog = markets_sub.add_parser("catalog")
+    market_catalog.add_argument("--limit", type=int, default=20)
+    market_catalog.add_argument("--scope", choices=["active", "closed", "all"], default="active")
     market_cache = markets_sub.add_parser("cache")
     market_cache.add_argument("id")
     market_stream = markets_sub.add_parser("stream-once")
     market_stream.add_argument("id")
+
+    events = subparsers.add_parser("events")
+    events_sub = events.add_subparsers(dest="events_command")
+    event_catalog = events_sub.add_parser("catalog")
+    event_catalog.add_argument("--limit", type=int, default=20)
+    event_catalog.add_argument("--scope", choices=["active", "closed", "all"], default="active")
 
     analysis = subparsers.add_parser("analysis")
     analysis_sub = analysis.add_subparsers(dest="analysis_command")
@@ -348,6 +370,7 @@ def main(argv: list[str] | None = None) -> int:
                 PublicMarketWebSocketClient(),
                 stale_after_seconds=market_data_service.stale_after_seconds,
             )
+            market_catalog_service = MarketCatalogService(gamma_client)
             proposal_service = ProposalLifecycleService(
                 ProposalRepository(connection),
                 AuditLogService(AuditRepository(connection)),
@@ -409,6 +432,7 @@ def main(argv: list[str] | None = None) -> int:
                             saved_view_service=saved_view_service,
                             reporting_service=reporting_service,
                             market_data_service=market_data_service,
+                            market_catalog_service=MarketCatalogService(gamma_client),
                         )
                     ),
                     args.host,
@@ -657,6 +681,14 @@ def main(argv: list[str] | None = None) -> int:
             if args.command == "markets" and args.markets_command == "live":
                 _print_lines(market_data_lines(market_data_service.inspect_snapshot(args.id, refresh=args.refresh)))
                 return 0
+            if args.command == "markets" and args.markets_command == "catalog":
+                active, closed = _catalog_scope_to_flags(args.scope)
+                _print_lines(
+                    market_catalog_lines(
+                        market_catalog_service.list_markets(limit=args.limit, active=active, closed=closed)
+                    )
+                )
+                return 0
             if args.command == "markets" and args.markets_command == "cache":
                 snapshot = market_data_service.latest_cached_snapshot(args.id)
                 if snapshot is None:
@@ -666,6 +698,14 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             if args.command == "markets" and args.markets_command == "stream-once":
                 _print_lines(market_data_lines(asyncio.run(realtime_market_feed_service.refresh_from_websocket(args.id))))
+                return 0
+            if args.command == "events" and args.events_command == "catalog":
+                active, closed = _catalog_scope_to_flags(args.scope)
+                _print_lines(
+                    event_catalog_lines(
+                        market_catalog_service.list_events(limit=args.limit, active=active, closed=closed)
+                    )
+                )
                 return 0
             if args.command == "analysis" and args.analysis_command == "outcomes":
                 _print_lines(outcome_analysis_lines(outcome_analysis_service.summarize_outcomes(args.group_by, args.since_hours)))

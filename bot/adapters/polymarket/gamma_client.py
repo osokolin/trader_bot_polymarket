@@ -79,6 +79,15 @@ class GammaApiClient:
             raise PolymarketParseError("Unexpected Gamma market response shape")
         return payload
 
+    def list_markets(self, limit: int = 20, active: bool = True, closed: bool = False) -> list[dict[str, object]]:
+        payload = self._get_json(
+            "/markets",
+            params={"limit": limit, "active": str(active).lower(), "closed": str(closed).lower()},
+        )
+        if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
+            raise PolymarketParseError("Unexpected Gamma markets response shape")
+        return payload
+
     def get_event(self, event_id: str) -> dict[str, object]:
         payload = self._get_json("/events", params={"id": event_id})
         if isinstance(payload, list):
@@ -90,6 +99,15 @@ class GammaApiClient:
             return first
         if not isinstance(payload, dict):
             raise PolymarketParseError("Unexpected Gamma event response shape")
+        return payload
+
+    def list_events(self, limit: int = 20, active: bool = True, closed: bool = False) -> list[dict[str, object]]:
+        payload = self._get_json(
+            "/events",
+            params={"limit": limit, "active": str(active).lower(), "closed": str(closed).lower()},
+        )
+        if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
+            raise PolymarketParseError("Unexpected Gamma events response shape")
         return payload
 
     def close(self) -> None:

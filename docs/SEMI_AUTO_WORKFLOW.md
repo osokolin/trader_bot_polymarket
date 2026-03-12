@@ -32,6 +32,7 @@ At the current milestone depth:
 26. The dashboard home page now surfaces summary cards plus latest open alerts, active proposals/intents, recent decision reviews, recent outcome analysis snapshots, alert lifecycle actions, and saved-view entry points.
 27. `bot demo seed` can populate a local operator-ready sandbox dataset, and UI export pages now expose persisted decision review, execution evaluation, and outcome analysis payloads through the reporting layer.
 28. Public live market data can now be inspected through Gamma metadata, public CLOB `/book` + `/midpoint` + `/price` endpoints, cached market snapshots, and a public market WebSocket path with reconnect/backoff plus receive-timeout detection.
+29. Operator catalog views now expose public Gamma market and event listings through `bot markets catalog --scope active|closed|all`, `bot events catalog --scope active|closed|all`, `/catalog/markets`, and `/catalog/events`.
 
 Execution adapters remain non-autonomous; approval currently stops at a verified `approved` state.
 When a live order book is available, approval revalidation uses fresh public market metadata plus fresh CLOB `/book` and `/midpoint` pricing, and `current_price` currently uses the midpoint as a temporary execution-price proxy.

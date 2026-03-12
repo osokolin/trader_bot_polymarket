@@ -10,6 +10,7 @@ from bot.domain.models import DecisionReviewSnapshot, OutcomeAnalysisSnapshot, S
 from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService
+from bot.services.market_catalog import MarketCatalogService
 from bot.services.market_sync import LiveMarketDataService
 from bot.services.operator_notifications import OperatorNotificationsService
 from bot.services.outcome_analysis import OutcomeAnalysisService
@@ -43,6 +44,7 @@ class OperatorDashboardServices:
     saved_view_service: SavedViewService
     reporting_service: ReportingService
     market_data_service: LiveMarketDataService | None = None
+    market_catalog_service: MarketCatalogService | None = None
 
 
 class OperatorDashboardApp:
@@ -204,6 +206,10 @@ class OperatorDashboardApp:
             return "200 OK", self._alert_action(path.split("/")[2], path.split("/")[3], query)
         if path == "/research":
             return "200 OK", self._research_index(query)
+        if path == "/catalog/markets":
+            return "200 OK", self._market_catalog(query)
+        if path == "/catalog/events":
+            return "200 OK", self._event_catalog(query)
         if path.startswith("/markets/live/"):
             refresh = query.get("refresh", ["0"])[0] in {"1", "true", "yes"}
             return "200 OK", self._live_market_detail(path.rsplit("/", 1)[1], refresh=refresh)
@@ -383,6 +389,81 @@ class OperatorDashboardApp:
             "Тонкий интерфейс поверх сохраненных сервисов и операторских сценариев.",
             body,
         )
+
+    def _market_catalog(self, query: dict[str, list[str]]) -> str:
+        if self.services.market_catalog_service is None:
+            raise ValueError("Каталог рынков не настроен")
+        limit = int(self._query_value(query, "limit", "20"))
+        active = self._query_value(query, "active", "1") not in {"0", "false", "no"}
+        items = self.services.market_catalog_service.list_markets(limit=limit, active=active, closed=not active)
+        body = hero("Каталог рынков", "Публичный список рынков Polymarket через Gamma API.")
+        body += panel(
+            "Фильтры",
+            link_row(
+                [
+                    ("активные", "/catalog/markets?active=1&limit=20"),
+                    ("закрытые", "/catalog/markets?active=0&limit=20"),
+                    ("50 рынков", f"/catalog/markets?active={'1' if active else '0'}&limit=50"),
+                ]
+            ),
+        )
+        body += panel(
+            f"Рынки ({len(items)})",
+            list_items(
+                [
+                    item_link(
+                        item.question,
+                        f"id={item.market_id} | category={item.category} | liquidity={item.liquidity_usd if item.liquidity_usd is not None else '-'}",
+                        f"/markets/live/{item.market_id}",
+                        meta=f"event={item.event_id or '-'} | orderbook={'yes' if item.enable_order_book else 'no'} | slug={item.slug or '-'}",
+                    )
+                    + link_row(
+                        [
+                            ("live", f"/markets/live/{item.market_id}"),
+                            ("research", f"/research/markets/{item.market_id}"),
+                            ("decision review", f"/decision-reviews/markets/{item.market_id}"),
+                        ]
+                    )
+                    for item in items
+                ],
+                "Нет рынков.",
+            ),
+        )
+        return page("Каталог рынков", body)
+
+    def _event_catalog(self, query: dict[str, list[str]]) -> str:
+        if self.services.market_catalog_service is None:
+            raise ValueError("Каталог событий не настроен")
+        limit = int(self._query_value(query, "limit", "20"))
+        active = self._query_value(query, "active", "1") not in {"0", "false", "no"}
+        items = self.services.market_catalog_service.list_events(limit=limit, active=active, closed=not active)
+        body = hero("Каталог событий", "Публичный список событий Polymarket через Gamma API.")
+        body += panel(
+            "Фильтры",
+            link_row(
+                [
+                    ("активные", "/catalog/events?active=1&limit=20"),
+                    ("закрытые", "/catalog/events?active=0&limit=20"),
+                    ("50 событий", f"/catalog/events?active={'1' if active else '0'}&limit=50"),
+                ]
+            ),
+        )
+        body += panel(
+            f"События ({len(items)})",
+            list_items(
+                [
+                    item_link(
+                        item.title,
+                        f"id={item.event_id} | markets={item.market_count}",
+                        "/catalog/events",
+                        meta=f"slug={item.slug or '-'} | active={'yes' if item.active else 'no'}",
+                    )
+                    for item in items
+                ],
+                "Нет событий.",
+            ),
+        )
+        return page("Каталог событий", body)
 
     def _proposal_list(self, query: dict[str, list[str]]) -> str:
         scope = self._query_value(query, "scope", "all")
