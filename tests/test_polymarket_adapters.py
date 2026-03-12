@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
-from datetime import timedelta
+from datetime import timedelta, timezone
 from pathlib import Path
 from contextlib import redirect_stdout
 from io import StringIO
@@ -106,6 +106,13 @@ def _snapshot(market_id: str = "mkt_1", source: str = "cache", age_seconds: int 
 class PolymarketAdaptersTest(unittest.TestCase):
     def setUp(self) -> None:
         self.settings = load_settings(Path("config"))
+
+    def test_parse_datetime_accepts_epoch_milliseconds(self) -> None:
+        from bot.adapters.polymarket.clob_client import _parse_datetime
+
+        parsed = _parse_datetime("1773336812102")
+        self.assertEqual(parsed.tzinfo, timezone.utc)
+        self.assertEqual(parsed.year, 2026)
 
     def _mock_gamma_client(self, handler) -> GammaApiClient:
         return GammaApiClient(http_client=httpx.Client(transport=httpx.MockTransport(handler)))
