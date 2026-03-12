@@ -29,6 +29,7 @@ from bot.cli.presenter import (
     latest_execution_lines,
     list_header_lines,
     market_catalog_lines,
+    market_opportunity_lines,
     proposal_detail_lines,
     polymarket_diagnostics_lines,
     probability_drift_lines,
@@ -52,6 +53,7 @@ from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService
 from bot.services.approval_snapshot_provider import PolymarketApprovalSnapshotProvider
 from bot.services.market_catalog import MarketCatalogService
+from bot.services.market_opportunity_scanner import MarketOpportunityScannerService
 from bot.services.polymarket_diagnostics import PolymarketDiagnosticsService
 from bot.services.market_sync import LiveMarketDataService
 from bot.services.realtime_market_feed import RealtimeMarketFeedService
@@ -263,6 +265,10 @@ def build_parser() -> argparse.ArgumentParser:
     market_catalog = markets_sub.add_parser("catalog")
     market_catalog.add_argument("--limit", type=int, default=20)
     market_catalog.add_argument("--scope", choices=["active", "closed", "all"], default="active")
+    market_scan = markets_sub.add_parser("scan")
+    market_scan.add_argument("--min-edge", type=float)
+    market_scan.add_argument("--min-liquidity", type=float)
+    market_scan.add_argument("--limit", type=int, default=20)
     market_cache = markets_sub.add_parser("cache")
     market_cache.add_argument("id")
     market_stream = markets_sub.add_parser("stream-once")
@@ -391,6 +397,10 @@ def main(argv: list[str] | None = None) -> int:
                 stale_after_seconds=market_data_service.stale_after_seconds,
             )
             market_catalog_service = MarketCatalogService(gamma_client)
+            market_opportunity_scanner = MarketOpportunityScannerService(
+                market_catalog_service=market_catalog_service,
+                market_data_service=market_data_service,
+            )
             proposal_service = ProposalLifecycleService(
                 ProposalRepository(connection),
                 AuditLogService(AuditRepository(connection)),
@@ -706,6 +716,18 @@ def main(argv: list[str] | None = None) -> int:
                 _print_lines(
                     market_catalog_lines(
                         market_catalog_service.list_markets(limit=args.limit, active=active, closed=closed)
+                    )
+                )
+                return 0
+            if args.command == "markets" and args.markets_command == "scan":
+                _print_lines(
+                    market_opportunity_lines(
+                        market_opportunity_scanner.scan(
+                            settings,
+                            min_edge=args.min_edge,
+                            min_liquidity=args.min_liquidity,
+                            limit=args.limit,
+                        )
                     )
                 )
                 return 0

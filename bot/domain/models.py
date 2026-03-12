@@ -65,6 +65,27 @@ class MarketDataSnapshot:
 
 
 @dataclass(slots=True)
+class OpportunityCandidate:
+    market_id: str
+    market_title: str
+    category: str
+    market_price: float
+    fair_probability: float
+    edge: float
+    confidence: float
+    liquidity_usd: float | None
+    source: str
+
+
+@dataclass(slots=True)
+class OpportunityScanResult:
+    opportunities: list["OpportunityCandidate"]
+    scanned_count: int
+    skipped_count: int
+    warning_messages: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class Signal:
     signal_id: str
     market_id: str
