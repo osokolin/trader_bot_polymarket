@@ -25,7 +25,7 @@ market snapshot + signal + probability
 - `bot/storage`: SQLite schema bootstrap and repositories
 - `bot/policies`: policy layers and composite policy
 - `bot/services`: sizing, proposal generation, lifecycle transitions, audit logging, approval-time snapshot wiring, and cached live market-data retrieval
-- `bot/adapters/polymarket`: Gamma metadata, public CLOB market data, public market WebSocket, and execution abstractions
+- `bot/adapters/polymarket`: Gamma metadata, public CLOB `/book` + `/midpoint` + `/price`, public market WebSocket, and execution abstractions
 - `bot/cli`: CLI skeleton for scan/proposal/position/safety/config commands
 
 ## Current boundaries
@@ -33,6 +33,6 @@ market snapshot + signal + probability
 - Proposal lifecycle is stored in SQLite and controlled through explicit service methods.
 - Persistence exists for milestone-1 entities and audit/proposal records needed by the core.
 - Public live market data is retrieved through adapter-level Gamma/CLOB clients and cached locally as market snapshots.
-- Approve revalidation uses fresh public market metadata and public CLOB pricing when a snapshot provider is configured.
+- Approve revalidation uses fresh public market metadata and public CLOB `/book` + `/midpoint` pricing when a snapshot provider is configured, while `/price` is stored as explicit reference-price metadata.
 - Public market-data failures are fail-closed: stale, malformed, or unavailable market data blocks approval.
 - Live execution remains disabled; no authenticated trading, order posting, or user channel support is present.

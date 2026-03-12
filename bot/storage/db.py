@@ -164,7 +164,10 @@ CREATE TABLE IF NOT EXISTS market_data_snapshots (
     market_payload_json TEXT NOT NULL,
     orderbook_payload_json TEXT NOT NULL,
     websocket_payload_json TEXT NOT NULL,
-    last_trade_price REAL,
+    observed_at TEXT NOT NULL,
+    stale INTEGER NOT NULL,
+    reference_price REAL,
+    pricing_metadata_json TEXT NOT NULL,
     data_age_seconds INTEGER NOT NULL,
     fetched_at TEXT NOT NULL
 );

@@ -407,8 +407,10 @@ class ProposalLifecycleService:
             payload["revalidated_market_snapshot_id"] = snapshot.market_snapshot_id
         if snapshot.snapshot_source is not None:
             payload["revalidated_market_snapshot_source"] = snapshot.snapshot_source
-        if snapshot.last_trade_price is not None:
-            payload["revalidated_last_trade_price"] = snapshot.last_trade_price
+        if snapshot.reference_price is not None:
+            payload["revalidated_reference_price"] = snapshot.reference_price
+        if snapshot.pricing_metadata is not None:
+            payload["revalidated_pricing_metadata"] = snapshot.pricing_metadata
         if snapshot.orderbook is not None:
             payload["revalidated_orderbook_timestamp"] = snapshot.orderbook.timestamp.isoformat()
             payload["revalidated_spread_pct"] = snapshot.orderbook.spread_pct

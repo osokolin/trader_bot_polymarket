@@ -54,10 +54,13 @@ class MarketDataSnapshot:
     asset_id: str
     market: Market
     orderbook: OrderBookSnapshot
+    observed_at: datetime
     fetched_at: datetime
     source: str
+    stale: bool
     data_age_seconds: int
-    last_trade_price: float | None = None
+    reference_price: float | None = None
+    pricing_metadata: dict[str, object] = field(default_factory=dict)
     websocket_payload: dict[str, object] = field(default_factory=dict)
 
 

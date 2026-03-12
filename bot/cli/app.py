@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import argparse
 import json
 import os
 from pathlib import Path
 
-from bot.adapters.polymarket.client import ClobMarketDataClient, GammaApiClient, PolymarketClient, PolymarketMarketMetadataAdapter
-from bot.adapters.polymarket.market_stream import PolymarketOrderBookAdapter, PublicMarketWebSocketClient
+from bot.adapters.polymarket.clob_client import ClobMarketDataClient, PolymarketClient, PolymarketOrderBookAdapter
+from bot.adapters.polymarket.gamma_client import GammaApiClient, PolymarketMarketMetadataAdapter
+from bot.adapters.polymarket.websocket_market import PublicMarketWebSocketClient
 from bot.adapters.polymarket.trading import SemiAutoExecutionAdapter
 from bot.cli.presenter import (
     analytics_summary_lines,
@@ -45,7 +47,9 @@ from bot.services.audit_log import AuditLogService
 from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService
-from bot.services.market_data import LiveMarketDataService, PolymarketApprovalSnapshotProvider
+from bot.services.approval_snapshot_provider import PolymarketApprovalSnapshotProvider
+from bot.services.market_sync import LiveMarketDataService
+from bot.services.realtime_market_feed import RealtimeMarketFeedService
 from bot.services.outcome_analysis import OutcomeAnalysisService
 from bot.services.operator_notifications import OperatorNotificationsService
 from bot.services.probability_engine import EdgeAdjustedProbabilityProvider
@@ -236,6 +240,7 @@ def build_parser() -> argparse.ArgumentParser:
     market_research.add_argument("id")
     market_live = markets_sub.add_parser("live")
     market_live.add_argument("id")
+    market_live.add_argument("--refresh", action="store_true")
     market_cache = markets_sub.add_parser("cache")
     market_cache.add_argument("id")
     market_stream = markets_sub.add_parser("stream-once")
@@ -337,7 +342,11 @@ def main(argv: list[str] | None = None) -> int:
                 PolymarketMarketMetadataAdapter(gamma_client),
                 PolymarketOrderBookAdapter(ClobMarketDataClient(http_client=client.http_client)),
                 MarketDataSnapshotRepository(connection),
-                websocket_client=PublicMarketWebSocketClient(),
+            )
+            realtime_market_feed_service = RealtimeMarketFeedService(
+                market_data_service,
+                PublicMarketWebSocketClient(),
+                stale_after_seconds=market_data_service.stale_after_seconds,
             )
             proposal_service = ProposalLifecycleService(
                 ProposalRepository(connection),
@@ -646,7 +655,7 @@ def main(argv: list[str] | None = None) -> int:
                 _print_lines(research_summary_lines(proposal_service.latest_probability_snapshot_for_market(args.id)))
                 return 0
             if args.command == "markets" and args.markets_command == "live":
-                _print_lines(market_data_lines(market_data_service.fetch_live_snapshot(args.id)))
+                _print_lines(market_data_lines(market_data_service.inspect_snapshot(args.id, refresh=args.refresh)))
                 return 0
             if args.command == "markets" and args.markets_command == "cache":
                 snapshot = market_data_service.latest_cached_snapshot(args.id)
@@ -656,7 +665,7 @@ def main(argv: list[str] | None = None) -> int:
                     _print_lines(market_data_lines(snapshot))
                 return 0
             if args.command == "markets" and args.markets_command == "stream-once":
-                _print_lines(market_data_lines(market_data_service.refresh_from_websocket(args.id)))
+                _print_lines(market_data_lines(asyncio.run(realtime_market_feed_service.refresh_from_websocket(args.id))))
                 return 0
             if args.command == "analysis" and args.analysis_command == "outcomes":
                 _print_lines(outcome_analysis_lines(outcome_analysis_service.summarize_outcomes(args.group_by, args.since_hours)))

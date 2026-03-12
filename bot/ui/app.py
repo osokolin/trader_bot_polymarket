@@ -10,7 +10,7 @@ from bot.domain.models import DecisionReviewSnapshot, OutcomeAnalysisSnapshot, S
 from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService
-from bot.services.market_data import LiveMarketDataService
+from bot.services.market_sync import LiveMarketDataService
 from bot.services.operator_notifications import OperatorNotificationsService
 from bot.services.outcome_analysis import OutcomeAnalysisService
 from bot.services.proposal_lifecycle import ProposalLifecycleService
@@ -205,7 +205,8 @@ class OperatorDashboardApp:
         if path == "/research":
             return "200 OK", self._research_index(query)
         if path.startswith("/markets/live/"):
-            return "200 OK", self._live_market_detail(path.rsplit("/", 1)[1])
+            refresh = query.get("refresh", ["0"])[0] in {"1", "true", "yes"}
+            return "200 OK", self._live_market_detail(path.rsplit("/", 1)[1], refresh=refresh)
         if path.startswith("/research/proposals/"):
             return "200 OK", self._proposal_snapshot_detail(path.rsplit("/", 1)[1])
         if path.startswith("/research/markets/"):
@@ -735,10 +736,10 @@ class OperatorDashboardApp:
         body += panel("Live market data", link_row([("live snapshot", f"/markets/live/{market_id}")]))
         return page("Снимок рынка", body)
 
-    def _live_market_detail(self, market_id: str) -> str:
+    def _live_market_detail(self, market_id: str, refresh: bool = False) -> str:
         if self.services.market_data_service is None:
             raise ValueError("Live market data service is not configured")
-        snapshot = self.services.market_data_service.fetch_live_snapshot(market_id)
+        snapshot = self.services.market_data_service.inspect_snapshot(market_id, refresh=refresh)
         cached = self.services.market_data_service.latest_cached_snapshot(market_id)
         body = hero("Рыночные live-данные", "Публичные metadata и CLOB pricing без включения live trading.")
         body += panel(
@@ -752,7 +753,10 @@ class OperatorDashboardApp:
                     ("source", snapshot.source),
                     ("data_age_seconds", snapshot.data_age_seconds),
                     ("current_price", f"{snapshot.orderbook.midpoint:.4f}"),
-                    ("reference_price", "-" if snapshot.last_trade_price is None else f"{snapshot.last_trade_price:.4f}"),
+                    ("reference_price", "-" if snapshot.reference_price is None else f"{snapshot.reference_price:.4f}"),
+                    ("observed_at", snapshot.observed_at.isoformat()),
+                    ("stale", "yes" if snapshot.stale else "no"),
+                    ("pricing_status", str(snapshot.pricing_metadata.get("price_status", "-"))),
                     ("created_at", snapshot.fetched_at.isoformat()),
                 ]
             )
@@ -760,6 +764,7 @@ class OperatorDashboardApp:
                 [
                     ("research snapshot", f"/research/markets/{market_id}"),
                     ("cached history", f"/research?market_id={market_id}"),
+                    ("обновить сейчас", f"/markets/live/{market_id}?refresh=1"),
                 ]
             ),
         )
