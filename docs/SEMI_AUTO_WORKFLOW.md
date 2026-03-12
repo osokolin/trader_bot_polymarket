@@ -34,6 +34,7 @@ At the current milestone depth:
 28. Public live market data can now be inspected through Gamma metadata, public CLOB `/book` + `/midpoint` + `/price` endpoints, cached market snapshots, and a public market WebSocket path with reconnect/backoff plus receive-timeout detection.
 29. Operator catalog views now expose public Gamma market and event listings through `bot markets catalog --scope active|closed|all`, `bot events catalog --scope active|closed|all`, `/catalog/markets`, and `/catalog/events`.
 30. `bot markets scan` provides a read-only market opportunity scan over active markets, using cached-or-live market pricing plus a deterministic scanner fair-value heuristic, with filtering by absolute edge magnitude, liquidity, and result limit.
+31. `bot markets draft-opportunities` can convert scanner results into safe draft proposals through the existing proposal lifecycle, while deduping against active proposals for the same market and leaving approval, intent creation, and execution unchanged.
 
 Execution adapters remain non-autonomous; approval currently stops at a verified `approved` state.
 When a live order book is available, approval revalidation uses fresh public market metadata plus fresh CLOB `/book` and `/midpoint` pricing, and `current_price` currently uses the midpoint as a temporary execution-price proxy.

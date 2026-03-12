@@ -341,6 +341,27 @@ def market_opportunity_lines(result) -> list[str]:
     return lines
 
 
+def opportunity_draft_lines(result) -> list[str]:
+    lines = [
+        "Opportunity proposal bridge",
+        f"created_count: {len(result.created)}",
+        f"skipped_count: {len(result.skipped)}",
+    ]
+    for item in result.created:
+        lines.append(
+            f"action=created | market_id={item.market_id} | title={item.market_title} | "
+            f"proposal_id={item.proposal_id or '-'} | status={item.proposal_status.value if item.proposal_status else '-'} | "
+            f"edge={'-' if item.edge is None else f'{item.edge:+.4f}'} | reason={item.reason}"
+        )
+    for item in result.skipped:
+        lines.append(
+            f"action=skipped | market_id={item.market_id} | title={item.market_title} | "
+            f"proposal_id={item.proposal_id or '-'} | status={item.proposal_status.value if item.proposal_status else '-'} | "
+            f"edge={'-' if item.edge is None else f'{item.edge:+.4f}'} | reason={item.reason}"
+        )
+    return lines
+
+
 def event_catalog_lines(items) -> list[str]:
     lines = [f"event_count: {len(items)}"]
     for item in items:

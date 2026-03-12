@@ -9,8 +9,8 @@ from bot.domain.enums import (
     AlertSeverity,
     AlertType,
     IntentStatus,
-    PositionStatus,
     ProposalStatus,
+    PositionStatus,
     SourceType,
     TradeAction,
     WatchTargetType,
@@ -83,6 +83,23 @@ class OpportunityScanResult:
     scanned_count: int
     skipped_count: int
     warning_messages: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class OpportunityDraftAction:
+    market_id: str
+    market_title: str
+    action: str
+    reason: str
+    proposal_id: str | None = None
+    proposal_status: ProposalStatus | None = None
+    edge: float | None = None
+
+
+@dataclass(slots=True)
+class OpportunityDraftResult:
+    created: list["OpportunityDraftAction"]
+    skipped: list["OpportunityDraftAction"]
 
 
 @dataclass(slots=True)
