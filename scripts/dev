@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VENV="$PROJECT_ROOT/.venv"
+PY="$VENV/bin/python"
+PIP="$VENV/bin/pip"
+BOT="$VENV/bin/bot"
+
+cmd="${1:-}"
+
+if [ -z "$cmd" ]; then
+  echo "Usage: scripts/dev <command>"
+  echo ""
+  echo "Commands:"
+  echo "  verify        Run full verification"
+  echo "  verify-fast   Run fast verification"
+  echo "  test          Run unit tests"
+  echo "  run           Run CLI"
+  echo "  scan          Run market opportunity scanner"
+  echo "  seed          Seed demo workflow"
+  echo "  config        Validate config"
+  echo "  doctor        Run operator/developer diagnostics"
+  exit 1
+fi
+
+if [ ! -x "$PY" ]; then
+  echo "Error: .venv not found. Create it first."
+  exit 1
+fi
+
+case "$cmd" in
+
+verify)
+  "$PROJECT_ROOT/scripts/verify-full.sh"
+  ;;
+
+verify-fast)
+  "$PROJECT_ROOT/scripts/verify-fast.sh"
+  ;;
+
+test)
+  "$PY" -m unittest discover -s tests -v
+  ;;
+
+run)
+  shift
+  "$PY" -m bot.cli.app "$@"
+  ;;
+
+scan)
+  shift || true
+  "$PY" -m bot.cli.app markets scan "$@"
+  ;;
+
+seed)
+  "$PY" -m bot.cli.app demo seed
+  ;;
+
+config)
+  "$PY" -m bot.cli.app config validate
+  ;;
+
+doctor)
+  "$PROJECT_ROOT/scripts/dev-doctor.sh"
+  ;;
+
+*)
+  echo "Unknown command: $cmd"
+  exit 1
+  ;;
+
+esac

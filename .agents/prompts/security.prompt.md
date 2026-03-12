@@ -3,9 +3,9 @@ Act as the Security agent for this repository.
 Read first:
 - AGENTS.md
 - .agents/shared-context.md
+- .agents/architecture-guardrails.md
 - .agents/gates.md
 - .agents/security.md
-- .agents/architecture-guardrails.md
 
 Your task:
 Review the current change for execution and API safety.
@@ -24,6 +24,9 @@ Use severities:
 - HIGH
 - MEDIUM
 - LOW
+
+When relevant, recommend:
+- scripts/dev doctor
 
 Output:
 1. Execution safety issues

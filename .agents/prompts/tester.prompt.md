@@ -3,22 +3,21 @@ Act as the Tester agent for this repository.
 Read first:
 - AGENTS.md
 - .agents/shared-context.md
+- .agents/architecture-guardrails.md
 - .agents/gates.md
 - .agents/tester.md
-- .agents/architecture-guardrails.md
 
 Your task:
 Run verification exactly and report pass/fail honestly.
 
-Preferred:
-- scripts/verify-fast.sh
-- scripts/verify-full.sh
+Preferred commands:
+- scripts/dev verify-fast
+- scripts/dev verify
+- scripts/dev doctor
 
-Minimum required:
+Fallback only if needed:
 - python -m unittest discover -s tests -v
 - python -m py_compile $(find bot tests -name '*.py' | sort)
-
-When relevant also run:
 - pip install -e .
 - bot config validate
 - bot demo seed
