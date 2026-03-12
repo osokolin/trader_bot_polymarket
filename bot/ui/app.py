@@ -1713,7 +1713,6 @@ class AuthenticatedOperatorDashboardApp(OperatorDashboardApp):
               </div>
             </form>
             """,
-            meta="Single-user режим: текущий production username — osokolin.",
         )
         return page("Вход", body)
 
