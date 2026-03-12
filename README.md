@@ -160,6 +160,38 @@ Module entrypoint works as well:
 - open saved views
 - open export pages from decision review or analysis pages
 
+## Telegram Operator Inbox
+
+Start the read-only Telegram operator inbox:
+
+```bash
+.venv/bin/bot telegram serve
+```
+
+Required environment:
+
+```bash
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_ALLOWED_CHAT_IDS=123456789,987654321
+```
+
+Supported commands:
+- `/start`
+- `/help`
+- `/status`
+- `/diagnostics`
+- `/scan`
+- `/proposals`
+- `/proposal <id>`
+- `/alerts`
+
+Phase 1 remains read-only:
+- no proposal approval
+- no proposal rejection
+- no intent creation
+- no execution submission
+- no runtime/config mutation
+
 ## Live Market Data
 
 Public market-data integration uses:

@@ -23,6 +23,11 @@ class _FakeMarketCatalogService:
         return self.markets[:limit]
 
 
+class _FailingMarketCatalogService:
+    def list_markets(self, limit: int = 20, active: bool = True, closed: bool = False):
+        raise RuntimeError("gamma unavailable")
+
+
 class _FakeMarketDataService:
     def __init__(self, snapshots: dict[str, MarketDataSnapshot], failures: dict[str, Exception] | None = None) -> None:
         self.snapshots = snapshots
@@ -171,6 +176,15 @@ class MarketOpportunityScannerTest(unittest.TestCase):
         self.assertEqual(result.opportunities, [])
         self.assertEqual(len(result.warning_messages), 1)
         self.assertIn("m1: hidden details", result.warning_messages[0])
+
+    def test_catalog_failure_returns_structured_warning(self) -> None:
+        service = MarketOpportunityScannerService(
+            market_catalog_service=_FailingMarketCatalogService(),  # type: ignore[arg-type]
+            market_data_service=_FakeMarketDataService({}),  # type: ignore[arg-type]
+        )
+        result = service.scan(self.settings, limit=10)
+        self.assertEqual(result.opportunities, [])
+        self.assertEqual(result.warning_messages, ["scan_unavailable: gamma unavailable"])
 
     def test_cli_output_is_operator_readable(self) -> None:
         fake_result = OpportunityScanResult(

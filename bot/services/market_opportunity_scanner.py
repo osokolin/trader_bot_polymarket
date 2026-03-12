@@ -25,7 +25,15 @@ class MarketOpportunityScannerService:
         edge_threshold = settings.entry_rules.min_edge_pct if min_edge is None else min_edge
         liquidity_threshold = settings.market_filters.min_liquidity_usd if min_liquidity is None else min_liquidity
         candidate_limit = max(limit * 4, 20)
-        market_summaries = self.market_catalog_service.list_markets(limit=candidate_limit, active=True, closed=False)
+        try:
+            market_summaries = self.market_catalog_service.list_markets(limit=candidate_limit, active=True, closed=False)
+        except Exception as exc:
+            return OpportunityScanResult(
+                opportunities=[],
+                scanned_count=0,
+                skipped_count=0,
+                warning_messages=[f"scan_unavailable: {exc}"],
+            )
 
         opportunities: list[OpportunityCandidate] = []
         warning_messages: list[str] = []
