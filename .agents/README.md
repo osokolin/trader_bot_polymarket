@@ -11,6 +11,11 @@ This project uses a structured multi-agent workflow.
 - Security — reviews safety boundaries, external API integrations, and execution constraints.
 - Committer — creates a commit only when all gates are green.
 
+Architecture guardrails are defined in:
+- `.agents/architecture-guardrails.md`
+
+These rules are binding for all agents.
+
 ## Core rules
 1. Never work directly on `main`.
 2. Work only in an approved non-main branch.
@@ -22,14 +27,11 @@ This project uses a structured multi-agent workflow.
 8. Keep external API logic in adapters.
 9. Fail closed on stale, malformed, or unavailable external data.
 10. Do not commit unless tests, review, and security gates pass.
-11. Architecture guardrails are defined in: - `.agents/architecture-guardrails.md`
 
-These rules are binding for all agents.
+## Unified developer entrypoint
 
-## Preferred verification scripts
-
-Use scripts when available:
+Use project wrapper commands when possible:
 
 ### Fast verification
 ```bash
-scripts/verify-fast.sh
+scripts/dev verify-fast

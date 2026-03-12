@@ -28,5 +28,4 @@ A change is green only if all gates below pass.
 Preferred:
 
 ### Fast verification
-```bash
-scripts/verify-fast.sh
+scripts/dev verify-fast

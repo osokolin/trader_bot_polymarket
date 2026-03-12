@@ -31,3 +31,17 @@ Project: trader_bot_polymarket
 - Preserve demo seed workflow.
 - Keep README and docs aligned with behavior.
 - Keep test suite green.
+
+## Unified developer entrypoint
+
+All agents should prefer using:
+
+scripts/dev verify
+scripts/dev verify-fast
+scripts/dev test
+scripts/dev config
+scripts/dev seed
+scripts/dev scan
+scripts/dev doctor
+
+Do not call python or pip directly.

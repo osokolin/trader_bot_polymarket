@@ -3,9 +3,9 @@ Act as the Committer agent for this repository.
 Read first:
 - AGENTS.md
 - .agents/shared-context.md
+- .agents/architecture-guardrails.md
 - .agents/gates.md
 - .agents/committer.md
-- .agents/architecture-guardrails.md
 
 Your task:
 Create a commit only if all gates are green.
@@ -24,6 +24,11 @@ Allowed branch patterns:
 - codex/*
 - refactor/*
 - docs/*
+
+Recommended verification before commit:
+- scripts/dev verify-fast
+- scripts/dev verify
+- scripts/dev doctor
 
 Tasks:
 1. Check current branch
