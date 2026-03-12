@@ -36,3 +36,11 @@ market snapshot + signal + probability
 - Approve revalidation uses fresh public market metadata and public CLOB `/book` + `/midpoint` pricing when a snapshot provider is configured, while `/price` is stored as explicit reference-price metadata.
 - Public market-data failures are fail-closed: stale, malformed, or unavailable market data blocks approval.
 - Live execution remains disabled; no authenticated trading, order posting, or user channel support is present.
+
+## Bootstrap / Composition Root
+
+- Runtime dependency construction now lives in `bot/bootstrap.py`.
+- `AppContainer` owns explicit construction of database, repositories, adapters, and services for the CLI/UI/Telegram runtime.
+- `DiagnosticsBootstrap` provides a smaller read-only composition root for Polymarket diagnostics without creating the full application graph.
+- `bot/cli/app.py` stays focused on argument parsing, command dispatch, and presenter output.
+- Demo/static UI rendering reuses the same bootstrap layer instead of hand-building a second service graph.
