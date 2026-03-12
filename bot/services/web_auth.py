@@ -9,7 +9,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from argon2 import PasswordHasher
-from argon2.exceptions import InvalidHashError, VerifyMismatchError
+from argon2.exceptions import VerifyMismatchError
+
+try:
+    from argon2.exceptions import InvalidHashError
+except ImportError:  # pragma: no cover - distro-packaged argon2 may expose InvalidHash instead
+    from argon2.exceptions import InvalidHash as InvalidHashError
 
 from bot.domain.models import RememberBrowserToken, WebSession, WebUser
 from bot.services.audit_log import AuditLogService

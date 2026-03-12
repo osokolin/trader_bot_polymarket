@@ -1709,11 +1709,10 @@ class AuthenticatedOperatorDashboardApp(OperatorDashboardApp):
                 <span><input type="checkbox" name="remember_browser" value="1"> запомнить этот браузер</span>
               </label>
               <div class="form-actions">
-                <button type="submit">Войти</button>
+            <button type="submit">Войти</button>
               </div>
             </form>
             """,
-            meta="Single-user режим: текущий production username — osokolin.",
         )
         return page("Вход", body)
 

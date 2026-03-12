@@ -1,0 +1,6 @@
+include README.md
+include DEPLOY.md
+include .env.example
+graft docs
+global-exclude .DS_Store
+exclude docs/images/static_ui.db

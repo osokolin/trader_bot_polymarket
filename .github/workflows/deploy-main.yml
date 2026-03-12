@@ -23,4 +23,4 @@ jobs:
 
       - name: Deploy to production server
         run: |
-          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes tg_bot@148.253.209.168
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes tg_bot@148.253.209.168 "bash -lc '~/bin/trader-bot-update'"
