@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from html import escape
+from http.cookies import SimpleCookie
 import json
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlencode
 
 from bot.domain.enums import AlertState, WatchTargetType
 from bot.domain.models import DecisionReviewSnapshot, SavedView
@@ -17,9 +18,16 @@ from bot.services.outcome_analysis import OutcomeAnalysisService
 from bot.services.proposal_lifecycle import ProposalLifecycleService
 from bot.services.reporting import ReportingService
 from bot.services.saved_views import SavedViewService
+from bot.services.web_auth import (
+    AuthenticatedWebRequest,
+    CookieInstruction,
+    WebAuthError,
+    WebAuthService,
+)
 from bot.ui.presenter import (
     badge,
     chips,
+    flash_message,
     hero,
     item_link,
     json_block,
@@ -28,6 +36,7 @@ from bot.ui.presenter import (
     list_items,
     page,
     panel,
+    post_action_row,
     shell_page,
     summary_cards,
 )
@@ -161,11 +170,14 @@ class OperatorDashboardApp:
         "critical": "критично",
     }
 
-    def __init__(self, services: OperatorDashboardServices) -> None:
+    def __init__(self, services: OperatorDashboardServices, auth_service: WebAuthService | None = None) -> None:
         self.services = services
+        self.auth_service = auth_service
+        self._request_csrf_token: str | None = None
 
-    def render_response(self, path: str, query_string: str = "") -> tuple[str, str]:
+    def render_response(self, path: str, query_string: str = "", csrf_token: str | None = None) -> tuple[str, str]:
         query = parse_qs(query_string, keep_blank_values=False)
+        self._request_csrf_token = csrf_token
         try:
             status, body = self._route(path, query)
         except ValueError as exc:
@@ -175,6 +187,8 @@ class OperatorDashboardApp:
                 hero("Интерфейс оператора", "Запрошенная сущность недоступна.")
                 + panel("Ошибка поиска", f'<div class="empty">{escape(str(exc))}</div>'),
             )
+        finally:
+            self._request_csrf_token = None
         return status, body
 
     def __call__(self, environ, start_response):
@@ -1012,22 +1026,70 @@ class OperatorDashboardApp:
                         f"параметры={saved.params}",
                         tone="good",
                     )
-                    + link_row(
-                        [
-                            ("запустить", f"/views/{saved.name}/run"),
-                            ("клонировать", f"/views/{saved.name}/clone?name={saved.name}-copy"),
-                            ("редактировать", f"/views/{saved.name}/edit"),
-                        ]
+                    + link_row([("запустить", f"/views/{saved.name}/run")])
+                    + (
+                        link_row(
+                            [
+                                ("клонировать", f"/views/{saved.name}/clone?name={saved.name}-copy"),
+                                ("редактировать", f"/views/{saved.name}/edit"),
+                            ]
+                        )
+                        if self._request_csrf_token is None
+                        else post_action_row(
+                            [
+                                (
+                                    "клонировать",
+                                    f"/views/{saved.name}/clone",
+                                    {"name": f"{saved.name}-copy", "csrf_token": self._request_csrf_token},
+                                    "warn",
+                                ),
+                                (
+                                    "редактировать",
+                                    f"/views/{saved.name}/edit",
+                                    {"csrf_token": self._request_csrf_token},
+                                    "warn",
+                                ),
+                            ]
+                        )
                     )
                     for saved in views
                 ],
                 "Сохраненных видов нет.",
             )
-            + link_row(
-                [
-                    ("сохранить текущий фильтр предложений", "/views/save-current?name=active-proposals-ui&kind=proposals_list&scope=active"),
-                    ("сохранить текущий фильтр анализа", "/views/save-current?name=market-analysis-ui&kind=analysis_outcomes&group_by=market"),
-                ]
+            + (
+                link_row(
+                    [
+                        ("сохранить текущий фильтр предложений", "/views/save-current?name=active-proposals-ui&kind=proposals_list&scope=active"),
+                        ("сохранить текущий фильтр анализа", "/views/save-current?name=market-analysis-ui&kind=analysis_outcomes&group_by=market"),
+                    ]
+                )
+                if self._request_csrf_token is None
+                else post_action_row(
+                    [
+                        (
+                            "сохранить текущий фильтр предложений",
+                            "/views/save-current",
+                            {
+                                "name": "active-proposals-ui",
+                                "kind": "proposals_list",
+                                "scope": "active",
+                                "csrf_token": self._request_csrf_token,
+                            },
+                            "good",
+                        ),
+                        (
+                            "сохранить текущий фильтр анализа",
+                            "/views/save-current",
+                            {
+                                "name": "market-analysis-ui",
+                                "kind": "analysis_outcomes",
+                                "group_by": "market",
+                                "csrf_token": self._request_csrf_token,
+                            },
+                            "good",
+                        ),
+                    ]
+                )
             ),
         )
         return shell_page(
@@ -1044,13 +1106,31 @@ class OperatorDashboardApp:
         body = panel(
             saved.name,
             self._kv([("kind", saved.kind), ("created_at", saved.created_at.isoformat()), ("params", saved.params)])
-            + link_row(
-                [
-                    ("запустить вид", f"/views/{saved.name}/run"),
-                    ("клонировать", f"/views/{saved.name}/clone?name={saved.name}-copy"),
-                    ("редактировать", f"/views/{saved.name}/edit"),
-                    ("все сохраненные виды", "/views"),
-                ]
+            + link_row([("запустить вид", f"/views/{saved.name}/run"), ("все сохраненные виды", "/views")])
+            + (
+                link_row(
+                    [
+                        ("клонировать", f"/views/{saved.name}/clone?name={saved.name}-copy"),
+                        ("редактировать", f"/views/{saved.name}/edit"),
+                    ]
+                )
+                if self._request_csrf_token is None
+                else post_action_row(
+                    [
+                        (
+                            "клонировать",
+                            f"/views/{saved.name}/clone",
+                            {"name": f"{saved.name}-copy", "csrf_token": self._request_csrf_token},
+                            "warn",
+                        ),
+                        (
+                            "редактировать",
+                            f"/views/{saved.name}/edit",
+                            {"csrf_token": self._request_csrf_token},
+                            "warn",
+                        ),
+                    ]
+                )
             ),
         )
         return shell_page(
@@ -1368,7 +1448,18 @@ class OperatorDashboardApp:
                     ("решить", f"/alerts/{alert.alert_id}/resolve?return_to={return_to}"),
                 ]
             )
-        return content + link_row(actions)
+        if self._request_csrf_token is None:
+            return content + link_row(actions)
+        post_actions = []
+        for label, href in actions:
+            path, _, query_string = href.partition("?")
+            fields = {"csrf_token": self._request_csrf_token}
+            if query_string:
+                for key, values in parse_qs(query_string, keep_blank_values=False).items():
+                    if values:
+                        fields[key] = values[-1]
+            post_actions.append((label, path, fields, "warn"))
+        return content + post_action_row(post_actions)
 
     def _status_item(self, title: str, status: str, href: str, meta: str, tone: str = "warn") -> str:
         display_status = self._display_value(status)
@@ -1436,3 +1527,286 @@ class OperatorDashboardApp:
 
     def _localized_counts(self, counts: dict[str, int]) -> dict[str, int]:
         return {str(self._display_value(key)): value for key, value in counts.items()}
+
+
+class AuthenticatedOperatorDashboardApp(OperatorDashboardApp):
+    def __init__(self, services: OperatorDashboardServices, auth_service: WebAuthService) -> None:
+        super().__init__(services, auth_service=auth_service)
+
+    def render_http_response(
+        self,
+        *,
+        method: str,
+        path: str,
+        query_string: str = "",
+        form_data: dict[str, str] | None = None,
+        cookies: dict[str, str] | None = None,
+        remote_addr: str = "127.0.0.1",
+        user_agent: str | None = None,
+    ) -> tuple[str, list[tuple[str, str]], str]:
+        cookies = cookies or {}
+        form_data = form_data or {}
+        auth_service = self.auth_service
+        if auth_service is None:
+            status, body = self.render_response(path, query_string)
+            return status, [("Content-Type", "text/html; charset=utf-8")], body
+
+        try:
+            authenticated = auth_service.authenticate_request(
+                session_cookie=cookies.get(auth_service.SESSION_COOKIE),
+                remember_cookie=cookies.get(auth_service.REMEMBER_COOKIE),
+                remote_addr=remote_addr,
+                user_agent=user_agent,
+            )
+
+            if path == "/login":
+                if authenticated is not None:
+                    return self._redirect("/", authenticated.set_cookies)
+                if method == "POST":
+                    return self._login_post(form_data, remote_addr=remote_addr, user_agent=user_agent)
+                return self._html_response("200 OK", self._login_page())
+
+            if authenticated is None:
+                return self._redirect("/login")
+
+            if path == "/logout":
+                if method != "POST":
+                    return self._html_response("405 Method Not Allowed", self._error_page("Метод не поддерживается"))
+                self.auth_service.verify_csrf(authenticated, form_data.get("csrf_token"))
+                cookies_to_set = authenticated.set_cookies + auth_service.logout(
+                    session_cookie=cookies.get(auth_service.SESSION_COOKIE),
+                    remember_cookie=cookies.get(auth_service.REMEMBER_COOKIE),
+                    remote_addr=remote_addr,
+                )
+                return self._redirect("/login", cookies_to_set)
+
+            if path == "/auth/security":
+                return self._html_response(
+                    "200 OK",
+                    self._security_page(authenticated),
+                    authenticated.set_cookies,
+                )
+
+            if path == "/auth/revoke-remember":
+                if method != "POST":
+                    return self._html_response("405 Method Not Allowed", self._error_page("Метод не поддерживается"))
+                self.auth_service.verify_csrf(authenticated, form_data.get("csrf_token"))
+                cookies_to_set = authenticated.set_cookies + auth_service.revoke_current_remember_token(
+                    cookies.get(auth_service.REMEMBER_COOKIE),
+                    actor_user=authenticated.user,
+                )
+                return self._html_response(
+                    "200 OK",
+                    shell_page(
+                        "Безопасность",
+                        "Токен браузера отозван",
+                        "Текущий remember-browser token был отозван.",
+                        panel(
+                            "Состояние",
+                            self._kv(
+                                [
+                                    ("username", authenticated.user.username),
+                                    ("summary", "Текущий браузер больше не останется авторизованным после закрытия сессии."),
+                                ]
+                            )
+                            + link_row([("вернуться к безопасности", "/auth/security"), ("главная", "/")]),
+                        ),
+                        flash="Remember-browser токен отозван.",
+                    ),
+                    cookies_to_set,
+                )
+
+            if path == "/auth/revoke-all":
+                if method != "POST":
+                    return self._html_response("405 Method Not Allowed", self._error_page("Метод не поддерживается"))
+                self.auth_service.verify_csrf(authenticated, form_data.get("csrf_token"))
+                cookies_to_set = authenticated.set_cookies + auth_service.revoke_all_auth(
+                    authenticated.user,
+                    remote_addr=remote_addr,
+                )
+                return self._redirect("/login", cookies_to_set)
+
+            if self._is_state_changing_route(path):
+                if method != "POST":
+                    return self._html_response("405 Method Not Allowed", self._error_page("Метод не поддерживается"))
+                self.auth_service.verify_csrf(authenticated, form_data.get("csrf_token"))
+                routed_query = self._encode_query({key: value for key, value in form_data.items() if key != "csrf_token"})
+                status, body = self.render_response(path, routed_query, csrf_token=authenticated.csrf_token)
+                return self._html_response(status, body, authenticated.set_cookies)
+
+            if method != "GET":
+                return self._html_response("405 Method Not Allowed", self._error_page("Метод не поддерживается"))
+
+            status, body = self.render_response(path, query_string, csrf_token=authenticated.csrf_token)
+            return self._html_response(status, body, authenticated.set_cookies)
+        except WebAuthError as exc:
+            return self._html_response("403 Forbidden", self._error_page(str(exc)))
+
+    def __call__(self, environ, start_response):
+        method = environ.get("REQUEST_METHOD", "GET").upper()
+        path = environ.get("PATH_INFO", "/")
+        query = environ.get("QUERY_STRING", "")
+        cookies = self._parse_cookies(environ.get("HTTP_COOKIE", ""))
+        form_data: dict[str, str] = {}
+        if method == "POST":
+            raw_length = environ.get("CONTENT_LENGTH", "0") or "0"
+            length = int(raw_length) if raw_length.isdigit() else 0
+            payload = environ["wsgi.input"].read(length).decode("utf-8") if length else ""
+            parsed = parse_qs(payload, keep_blank_values=False)
+            form_data = {key: values[-1] for key, values in parsed.items() if values}
+        status, headers, body = self.render_http_response(
+            method=method,
+            path=path,
+            query_string=query,
+            form_data=form_data,
+            cookies=cookies,
+            remote_addr=environ.get("REMOTE_ADDR", "127.0.0.1"),
+            user_agent=environ.get("HTTP_USER_AGENT"),
+        )
+        payload = body.encode("utf-8")
+        response_headers = headers + [("Content-Length", str(len(payload)))]
+        start_response(status, response_headers)
+        return [payload]
+
+    def _login_post(
+        self,
+        form_data: dict[str, str],
+        *,
+        remote_addr: str,
+        user_agent: str | None,
+    ) -> tuple[str, list[tuple[str, str]], str]:
+        username = form_data.get("username", "")
+        password = form_data.get("password", "")
+        remember_browser = form_data.get("remember_browser") in {"1", "true", "on", "yes"}
+        try:
+            result = self.auth_service.login(
+                username,
+                password,
+                remote_addr=remote_addr,
+                user_agent=user_agent,
+                remember_browser=remember_browser,
+            )
+        except WebAuthError as exc:
+            return self._html_response("401 Unauthorized", self._login_page(error=str(exc), username=username))
+        return self._redirect("/", result.set_cookies)
+
+    def _login_page(self, error: str | None = None, username: str = "osokolin") -> str:
+        body = hero("Вход в интерфейс оператора", "Требуется аутентификация для доступа к web UI.")
+        if error:
+            body += flash_message(error, "bad")
+        body += panel(
+            "Вход",
+            f"""
+            <form method="post" action="/login">
+              <label class="field">Имя пользователя
+                <input type="text" name="username" value="{escape(username, quote=True)}" autocomplete="username">
+              </label>
+              <label class="field">Пароль
+                <input type="password" name="password" autocomplete="current-password">
+              </label>
+              <label class="field">
+                <span>Опции</span>
+                <span><input type="checkbox" name="remember_browser" value="1"> запомнить этот браузер</span>
+              </label>
+              <div class="form-actions">
+                <button type="submit">Войти</button>
+              </div>
+            </form>
+            """,
+            meta="Single-user режим: текущий production username — osokolin.",
+        )
+        return page("Вход", body)
+
+    def _security_page(self, authenticated: AuthenticatedWebRequest) -> str:
+        state = self.auth_service.security_state(authenticated.user)
+        body = hero("Безопасность", "Управление текущими web-сессиями и remember-browser токенами.")
+        body += panel(
+            "Текущий доступ",
+            self._kv(
+                [
+                    ("username", authenticated.user.username),
+                    ("active_sessions", state.active_session_count),
+                    ("active_remember_tokens", state.active_remember_token_count),
+                ]
+            )
+            + post_action_row(
+                [
+                    (
+                        "Выйти",
+                        "/logout",
+                        {"csrf_token": authenticated.csrf_token},
+                        "warn",
+                    ),
+                    (
+                        "Отозвать текущий remember token",
+                        "/auth/revoke-remember",
+                        {"csrf_token": authenticated.csrf_token},
+                        "warn",
+                    ),
+                    (
+                        "Отозвать все сессии и токены",
+                        "/auth/revoke-all",
+                        {"csrf_token": authenticated.csrf_token},
+                        "bad",
+                    ),
+                ]
+            ),
+        )
+        return page("Безопасность", body)
+
+    def _redirect(
+        self,
+        location: str,
+        cookies: list[CookieInstruction] | None = None,
+    ) -> tuple[str, list[tuple[str, str]], str]:
+        headers = [("Location", location)]
+        for cookie in cookies or []:
+            headers.append(("Set-Cookie", self._format_cookie(cookie)))
+        body = page("Перенаправление", panel("Перенаправление", f'<div class="meta">Переход на {escape(location)}</div>'))
+        return "303 See Other", [("Content-Type", "text/html; charset=utf-8"), *headers], body
+
+    def _html_response(
+        self,
+        status: str,
+        body: str,
+        cookies: list[CookieInstruction] | None = None,
+    ) -> tuple[str, list[tuple[str, str]], str]:
+        headers = [("Content-Type", "text/html; charset=utf-8")]
+        for cookie in cookies or []:
+            headers.append(("Set-Cookie", self._format_cookie(cookie)))
+        return status, headers, body
+
+    def _error_page(self, message: str) -> str:
+        return page(
+            "Ошибка",
+            hero("Интерфейс оператора", "Запрос не может быть обработан.")
+            + panel("Ошибка", f'<div class="empty">{escape(message)}</div>'),
+        )
+
+    def _format_cookie(self, cookie: CookieInstruction) -> str:
+        parts = [f"{cookie.name}={cookie.value}", f"Path={cookie.path}", f"SameSite={cookie.same_site}"]
+        if cookie.max_age is not None:
+            parts.append(f"Max-Age={cookie.max_age}")
+        if cookie.expires is not None:
+            parts.append(f"Expires={cookie.expires.strftime('%a, %d %b %Y %H:%M:%S GMT')}")
+        if cookie.http_only:
+            parts.append("HttpOnly")
+        if cookie.secure:
+            parts.append("Secure")
+        return "; ".join(parts)
+
+    def _parse_cookies(self, cookie_header: str) -> dict[str, str]:
+        jar = SimpleCookie()
+        jar.load(cookie_header)
+        return {key: morsel.value for key, morsel in jar.items()}
+
+    def _encode_query(self, params: dict[str, str]) -> str:
+        return urlencode(params)
+
+    def _is_state_changing_route(self, path: str) -> bool:
+        return (
+            path.startswith("/alerts/")
+            or path == "/views/save-current"
+            or path.endswith("/clone")
+            or path.endswith("/edit")
+        )

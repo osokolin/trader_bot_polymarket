@@ -484,3 +484,39 @@ class OperatorActionRequestRecord:
     result: str
     payload: dict[str, object]
     created_at: datetime
+
+
+@dataclass(slots=True)
+class WebUser:
+    user_id: str
+    username: str
+    password_hash: str
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(slots=True)
+class WebSession:
+    session_id: str
+    user_id: str
+    token_hash: str
+    csrf_token: str
+    created_at: datetime
+    expires_at: datetime
+    last_seen_at: datetime
+    user_agent: str | None
+    ip_address: str | None
+    revoked_at: datetime | None = None
+
+
+@dataclass(slots=True)
+class RememberBrowserToken:
+    remember_token_id: str
+    user_id: str
+    token_hash: str
+    created_at: datetime
+    expires_at: datetime
+    last_used_at: datetime
+    user_agent: str | None
+    ip_address: str | None
+    revoked_at: datetime | None = None

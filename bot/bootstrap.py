@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 
 from bot.adapters.polymarket.clob_client import ClobMarketDataClient, PolymarketClient, PolymarketOrderBookAdapter
@@ -30,6 +31,7 @@ from bot.services.realtime_market_feed import RealtimeMarketFeedService
 from bot.services.reporting import ReportingService
 from bot.services.saved_views import SavedViewService
 from bot.services.telegram_operator_service import TelegramOperatorService
+from bot.services.web_auth import WebAuthService
 from bot.storage.db import Database
 from bot.storage.repositories import (
     AlertRepository,
@@ -44,9 +46,10 @@ from bot.storage.repositories import (
     ProbabilitySnapshotRepository,
     ProposalRepository,
     SavedViewRepository,
+    WebAuthRepository,
     WatchlistRepository,
 )
-from bot.ui import OperatorDashboardApp, OperatorDashboardServices
+from bot.ui import AuthenticatedOperatorDashboardApp, OperatorDashboardApp, OperatorDashboardServices
 
 
 @dataclass(slots=True)
@@ -58,6 +61,13 @@ class DiagnosticsBootstrap:
     def close(self) -> None:
         self.gamma_client.close()
         self.polymarket_client.close()
+
+
+def _ui_cookie_secure() -> bool:
+    explicit = os.getenv("BOT_UI_SECURE_COOKIES")
+    if explicit is not None:
+        return explicit.lower() not in {"0", "false", "no"}
+    return os.getenv("BOT_ENV", "dev") != "dev"
 
 
 @dataclass(slots=True)
@@ -86,6 +96,7 @@ class AppContainer:
     position_repository: PositionRepository
     diagnostics_service: PolymarketDiagnosticsService | None
     telegram_operator_service: TelegramOperatorService | None
+    web_auth_service: WebAuthService | None
 
     def dashboard_services(self) -> OperatorDashboardServices:
         return OperatorDashboardServices(
@@ -102,7 +113,9 @@ class AppContainer:
         )
 
     def dashboard_app(self) -> OperatorDashboardApp:
-        return OperatorDashboardApp(self.dashboard_services())
+        if self.web_auth_service is None:
+            return OperatorDashboardApp(self.dashboard_services())
+        return AuthenticatedOperatorDashboardApp(self.dashboard_services(), self.web_auth_service)
 
     def close(self) -> None:
         if hasattr(self.connection, "close"):
@@ -176,6 +189,7 @@ def build_app_container(
     opportunity_bridge_service: OpportunityProposalBridgeService | None = None
     decision_inbox_service: DecisionInboxService | None = None
     telegram_operator_service: TelegramOperatorService | None = None
+    web_auth_service: WebAuthService | None = None
 
     if include_market_runtime:
         polymarket_client = PolymarketClient()
@@ -250,6 +264,11 @@ def build_app_container(
         notifications_service,
         analytics_service,
     )
+    web_auth_service = WebAuthService(
+        WebAuthRepository(connection),
+        audit_log,
+        cookie_secure=_ui_cookie_secure(),
+    )
 
     if market_opportunity_scanner is not None:
         opportunity_bridge_service = opportunity_bridge_service_cls(
@@ -311,6 +330,7 @@ def build_app_container(
         position_repository=position_repository,
         diagnostics_service=diagnostics_service,
         telegram_operator_service=telegram_operator_service,
+        web_auth_service=web_auth_service,
     )
 
 

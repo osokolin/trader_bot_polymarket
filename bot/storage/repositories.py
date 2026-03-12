@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from bot.storage.alerts_repo import AlertRepository, WatchlistRepository
+from bot.storage.auth_repo import WebAuthRepository
 from bot.storage.execution_repo import OrderIntentRepository, PositionRepository
 from bot.storage.inbox_repo import OperatorActionRequestRepository
 from bot.storage.market_data_repo import MarketDataSnapshotRepository
@@ -26,5 +27,6 @@ __all__ = [
     "ProbabilitySnapshotRepository",
     "ProposalRepository",
     "SavedViewRepository",
+    "WebAuthRepository",
     "WatchlistRepository",
 ]

@@ -62,3 +62,7 @@ Alert inspection now includes lifecycle state, and saved views provide reusable 
 The operator dashboard is presentation-only and reuses the same proposal, execution, notification, decision-review, and outcome-analysis services as the CLI.
 UI alert actions call the same acknowledgment, dismissal, and resolution service methods used by the CLI; no alert mutation logic lives in the presentation layer.
 Integrated decision-review pages now join proposal context, persisted probability snapshot, drift summary, latest intent, simulated execution outcome, and latest execution evaluation into a single operator view.
+The production web UI now requires authentication before any operator page is reachable.
+Web auth is currently single-user (`osokolin`) with a password configured out-of-band through `bot auth set-password`, a server-side session cookie, and an optional remember-browser cookie stored only in HttpOnly cookies.
+Authenticated web mutations are CSRF-protected, and the `/auth/security` page allows the operator to log out, revoke the current browser remember token, or revoke all active sessions and remember tokens.
+Web auth does not alter proposal, inbox, Telegram, or execution semantics; it only gates access to the existing UI.

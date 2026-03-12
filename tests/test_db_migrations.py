@@ -33,6 +33,9 @@ class DatabaseMigrationsTest(unittest.TestCase):
         self.assertEqual(version, CURRENT_SCHEMA_VERSION)
         self.assertIn("trade_proposals", tables)
         self.assertIn("operator_action_requests", tables)
+        self.assertIn("web_users", tables)
+        self.assertIn("web_sessions", tables)
+        self.assertIn("web_remember_tokens", tables)
         self.assertIn("schema_version", tables)
 
     def test_existing_baseline_schema_upgrades_to_versioned_schema(self) -> None:
