@@ -5,6 +5,7 @@ Read first:
 - .agents/shared-context.md
 - .agents/gates.md
 - .agents/reviewer.md
+- .agents/architecture-guardrails.md
 
 Your task:
 Perform a code review of the current change.

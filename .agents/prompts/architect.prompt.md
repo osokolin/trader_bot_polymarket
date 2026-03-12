@@ -5,6 +5,7 @@ Read first:
 - .agents/shared-context.md
 - .agents/gates.md
 - .agents/architect.md
+- .agents/architecture-guardrails.md
 
 Your task:
 Review the proposed or implemented change for architecture fit.
