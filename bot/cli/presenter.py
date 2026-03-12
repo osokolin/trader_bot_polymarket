@@ -321,6 +321,26 @@ def market_catalog_lines(items) -> list[str]:
     return lines
 
 
+def market_opportunity_lines(result) -> list[str]:
+    lines = [
+        "Market opportunity scan",
+        f"scanned_count: {result.scanned_count}",
+        f"skipped_count: {result.skipped_count}",
+        f"opportunity_count: {len(result.opportunities)}",
+    ]
+    for warning in result.warning_messages:
+        lines.append(f"warning: {warning}")
+    for item in result.opportunities:
+        liquidity = "-" if item.liquidity_usd is None else f"{item.liquidity_usd:.2f}"
+        lines.append(
+            f"market_id={item.market_id} | title={item.market_title} | category={item.category} | "
+            f"market_price={item.market_price:.4f} | fair_probability={item.fair_probability:.4f} | "
+            f"edge={item.edge:+.4f} | confidence={item.confidence:.4f} | liquidity_usd={liquidity} | "
+            f"source={item.source}"
+        )
+    return lines
+
+
 def event_catalog_lines(items) -> list[str]:
     lines = [f"event_count: {len(items)}"]
     for item in items:

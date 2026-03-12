@@ -171,6 +171,7 @@ Public market-data integration uses:
 Catalog entry points:
 - CLI: `bot markets catalog --scope active|closed|all [--limit N]`
 - CLI: `bot events catalog --scope active|closed|all [--limit N]`
+- CLI: `bot markets scan [--min-edge N] [--min-liquidity N] [--limit N]`
 - UI: `/catalog/markets`
 - UI: `/catalog/events`
 
@@ -178,6 +179,9 @@ Examples:
 - `bot markets catalog --scope active`
 - `bot markets catalog --scope closed`
 - `bot markets catalog --scope all`
+- `bot markets scan --min-edge 0.08 --limit 10`
+
+`bot markets scan` is a read-only opportunity scan. It scans active markets, loads current cached-or-live market pricing, applies a deterministic scanner fair-value heuristic, computes `edge = fair_probability - market_price`, filters by absolute edge magnitude, and sorts the output by descending absolute edge then confidence.
 
 Approval revalidation now fails closed if public market data is stale, malformed, or unavailable.
 This integration does not enable live trading:
