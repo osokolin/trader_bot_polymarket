@@ -121,6 +121,15 @@ class DecisionInboxService:
     def list_open_requests(self, limit: int = 10) -> list[OperatorActionRequest]:
         return self.repository.list_by_statuses(list(OperatorActionRequestStatus.active_states()))[:limit]
 
+    def list_review_queue(self, limit: int = 10) -> list[OperatorActionRequest]:
+        items = self.repository.list_by_statuses([OperatorActionRequestStatus.OPEN])
+        items.sort(key=lambda item: item.created_at)
+        return items[:limit]
+
+    def get_next_open_request(self) -> OperatorActionRequest | None:
+        items = self.list_review_queue(limit=1)
+        return items[0] if items else None
+
     def get_request(self, request_id: str) -> OperatorActionRequest:
         request = self.repository.get(request_id)
         if request is None:
@@ -142,6 +151,8 @@ class DecisionInboxService:
     def apply_action(self, request_id: str, action: str, actor: str, source: str, chat_id: int | None = None) -> DecisionInboxActionResult:
         request = self.get_request(request_id)
         metadata = self._action_metadata(request, action, source, chat_id)
+        if action == "skip":
+            return self._skip_request(request, actor, metadata)
         if request.request_type == OperatorActionRequestType.PROPOSAL_REVIEW_REQUEST:
             return self._apply_proposal_action(request, action, actor, metadata)
         if request.request_type == OperatorActionRequestType.ALERT_NOTIFICATION:
@@ -149,6 +160,24 @@ class DecisionInboxService:
         if request.request_type == OperatorActionRequestType.DIAGNOSTICS_ISSUE:
             return self._apply_diagnostics_action(request, action, actor, metadata)
         raise DecisionInboxError(f"Unsupported request type: {request.request_type.value}")
+
+    def _skip_request(
+        self,
+        request: OperatorActionRequest,
+        actor: str,
+        metadata: dict[str, object],
+    ) -> DecisionInboxActionResult:
+        if request.status not in OperatorActionRequestStatus.active_states():
+            raise DecisionInboxError("This request can no longer be skipped.")
+        updated_request = self._save_request(
+            replace(
+                request,
+                status=OperatorActionRequestStatus.ACKNOWLEDGED,
+                updated_at=utc_now(),
+            )
+        )
+        self._record_action(updated_request, "skip", actor, "ok", metadata)
+        return DecisionInboxActionResult(request=updated_request, action="skip")
 
     def _apply_proposal_action(
         self,

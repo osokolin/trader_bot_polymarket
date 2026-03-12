@@ -182,6 +182,8 @@ Supported commands:
 - `/diagnostics`
 - `/scan`
 - `/inbox`
+- `/review`
+- `/review-next`
 - `/request <id>`
 - `/proposals`
 - `/proposal <id>`
@@ -189,6 +191,7 @@ Supported commands:
 - `/reject <id>`
 - `/cancel <id>`
 - `/analysis <id>`
+- `/skip <request_id>`
 - `/alerts`
 
 Phase 2 adds safe proposal lifecycle actions:
@@ -200,6 +203,12 @@ Phase 3 adds a persisted Telegram decision inbox:
 - operator action requests are stored server-side and exposed via `/inbox` and `/request <id>`
 - Telegram inbox cards now target `request_id` values for proposal review, alert acknowledgement, and diagnostics refresh/detail flows
 - proposal actions remain lifecycle-safe and are resolved through the decision inbox service before reaching proposal lifecycle methods
+
+Phase 4 adds a sequential Telegram review queue:
+- `/review` shows the current open request queue
+- `/review-next` opens the next open request in created order
+- queue actions may move directly to the next request card
+- `/skip <request_id>` acknowledges a request and removes it from the open review queue
 
 Telegram still remains execution-safe:
 - no intent creation
