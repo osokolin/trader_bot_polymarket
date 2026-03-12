@@ -17,3 +17,6 @@ __pycache__/
 __MACOSX/
 .env
 .idea/
+.agents/project-context.md
+CHAT_SUMMARY.md
+PROJECT_CONTEXT.md
