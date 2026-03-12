@@ -18,6 +18,7 @@ The repository currently includes:
 - lightweight operator dashboard UI
 
 See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md), [docs/CONFIG_REFERENCE.md](./docs/CONFIG_REFERENCE.md), and [docs/SEMI_AUTO_WORKFLOW.md](./docs/SEMI_AUTO_WORKFLOW.md).
+Deployment and server operations are documented in [docs/DEPLOY.md](./docs/DEPLOY.md) and [docs/RUNBOOK.md](./docs/RUNBOOK.md).
 
 ## Local Setup
 
@@ -118,6 +119,9 @@ This populates the local `bot.db` with:
 The production web UI now requires authentication. Create or update the configured operator password before starting the UI:
 
 ```bash
+set -a
+source ~/.config/trader_bot_polymarket.env
+set +a
 BOT_UI_PASSWORD='choose-a-strong-password' .venv/bin/bot auth set-password --username osokolin
 ```
 
@@ -133,6 +137,19 @@ Then open:
 
 ```text
 http://127.0.0.1:8080
+```
+
+For the current production server, the UI is intentionally bound to
+`127.0.0.1:8080` and accessed through an SSH tunnel:
+
+```bash
+ssh -i ~/.ssh/id_ed25519 -L 8080:127.0.0.1:8080 tg_bot@148.253.209.168
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8080/login
 ```
 
 Available UI areas:
@@ -160,6 +177,26 @@ Auth behavior:
 - remember-browser tokens can be revoked for the current browser
 - all active sessions and remember tokens can be revoked from `/auth/security`
 - no plaintext password is stored in the repo
+
+## Production Deployment
+
+The current production deployment model is:
+
+- source pulled from `main`
+- services run as `tg_bot`
+- project-local `.venv` used for runtime and deploy updates
+- Telegram bot and web UI run as user-level systemd services
+- web UI stays on `127.0.0.1:8080`
+- only `22/tcp` needs to be open when using SSH tunneling for the UI
+
+Canonical production update flow:
+
+1. `git fetch` / `git pull`
+2. refresh `.venv` with `pip install -e .`
+3. validate config
+4. restart `trader-bot-telegram.service` and `trader-bot-ui.service`
+
+For the full production guide, see [docs/DEPLOY.md](./docs/DEPLOY.md).
 
 ## UI Screenshots
 

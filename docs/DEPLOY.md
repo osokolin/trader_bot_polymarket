@@ -185,7 +185,7 @@ systemctl --user is-active trader-bot-telegram.service >/dev/null
 systemctl --user is-active trader-bot-ui.service >/dev/null
 ```
 
-The GitHub Actions deploy workflow should call this script remotely after a
+The GitHub Actions deploy workflow calls this script remotely after a
 push to `main`.
 
 ## 10. Accessing the Web UI
@@ -241,73 +241,14 @@ If you later publish the web UI externally:
 - set `BOT_UI_SECURE_COOKIES=true`
 - prefer port `443`, not a raw public `8080`
 
-------------------------------------------------------------------------
+## 14. Current Production Notes
 
-# 16. Systemd Service Example
+The current server uses:
 
-File:
+- SSH-based deploy from GitHub
+- `~/bin/trader-bot-update` as the remote update entrypoint
+- user-level systemd services under `tg_bot`
+- localhost-only web access through SSH tunneling
 
-/etc/systemd/system/trader-web.service
-
-\[Unit\] Description=Trader Web UI After=network.target
-
-\[Service\] WorkingDirectory=/opt/trader_bot_polymarket
-ExecStart=/opt/trader_bot_polymarket/.venv/bin/bot ui Restart=always
-User=trader
-
-\[Install\] WantedBy=multi-user.target
-
-Enable service:
-
-systemctl daemon-reload systemctl enable trader-web systemctl start
-trader-web
-
-------------------------------------------------------------------------
-
-# 17. Backups
-
-SQLite backup:
-
-cp bot.db bot.db.backup
-
-Recommended: nightly backups.
-
-------------------------------------------------------------------------
-
-# 18. Deployment Checklist
-
-After deployment verify:
-
-1.  verify-fast passes
-2.  verify passes
-3.  UI opens
-4.  demo seed data visible
-5.  inbox works
-6.  migrations applied
-7.  Telegram commands respond
-
-------------------------------------------------------------------------
-
-# 19. Current Limitations
-
-Not implemented yet:
-
--   Strategy Engine
--   Risk Engine
--   Portfolio Console
--   Multi-user authentication
--   Automatic execution
-
-------------------------------------------------------------------------
-
-# 20. Next Planned Feature
-
-Web authentication:
-
-User: osokolin
-
-Planned features:
-
--   session cookies
--   remember-browser tokens
--   revocable sessions
+This keeps the production surface small while preserving the current
+single-operator workflow.
