@@ -81,6 +81,15 @@ class TelegramOperatorService:
     def list_inbox(self, limit: int = 10) -> list[OperatorActionRequest]:
         return self.decision_inbox_service.list_open_requests(limit=limit)
 
+    def list_review_queue(self, limit: int = 10) -> list[OperatorActionRequest]:
+        return self.decision_inbox_service.list_review_queue(limit=limit)
+
+    def get_next_review_request(self) -> DecisionInboxRequestView | None:
+        request = self.decision_inbox_service.get_next_open_request()
+        if request is None:
+            return None
+        return self.decision_inbox_service.get_request_view(request.request_id)
+
     def get_request_details(self, request_id: str) -> DecisionInboxRequestView:
         return self.decision_inbox_service.get_request_view(request_id)
 
@@ -95,6 +104,18 @@ class TelegramOperatorService:
             )
         except ProposalLifecycleError as exc:
             raise ProposalLifecycleError(self._friendly_transition_message(action, exc)) from exc
+
+    def apply_request_action_and_get_next(
+        self,
+        request_id: str,
+        action: str,
+        chat_id: int,
+    ) -> tuple[DecisionInboxActionResult, DecisionInboxRequestView | None]:
+        result = self.apply_request_action(request_id, action, chat_id)
+        next_request = self.get_next_review_request()
+        if next_request is not None and next_request.request.request_id == request_id:
+            next_request = None
+        return result, next_request
 
     def approve_proposal(self, proposal_id: str, chat_id: int) -> TradeProposal:
         try:

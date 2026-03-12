@@ -19,6 +19,8 @@ def help_message() -> str:
         "/diagnostics\n"
         "/scan\n"
         "/inbox\n"
+        "/review\n"
+        "/review-next\n"
         "/request <id>\n"
         "/proposals\n"
         "/proposal <id>\n"
@@ -26,6 +28,7 @@ def help_message() -> str:
         "/reject <id>\n"
         "/cancel <id>\n"
         "/analysis <id>\n"
+        "/skip <id>\n"
         "/alerts"
     )
 
@@ -140,6 +143,16 @@ def inbox_message(requests) -> str:
     return "\n".join(lines)
 
 
+def review_queue_message(requests) -> str:
+    if not requests:
+        return "Review Queue\n\nOpen requests: 0"
+    lines = [f"Review Queue\n\nOpen requests: {len(requests)}", ""]
+    for index, request in enumerate(requests, start=1):
+        lines.append(f"{index}. {request.request_type.value} | {request.entity_id}")
+    lines.extend(["", "Use:", "/review-next", "/request <id>"])
+    return "\n".join(lines)
+
+
 def request_message(view) -> str:
     request = view.request
     if request.request_type == OperatorActionRequestType.PROPOSAL_REVIEW_REQUEST and view.proposal is not None:
@@ -193,8 +206,23 @@ def request_action_message(result) -> str:
         "acknowledge": "Alert acknowledged",
         "refresh": "Diagnostics refreshed",
         "details": "Request details",
+        "skip": "Request skipped",
     }
     return f"{labels.get(action, action)}\nRequest ID: {request.request_id}"
+
+
+def review_transition_message(result, next_view) -> str:
+    base = request_action_message(result)
+    if next_view is None:
+        return f"{base}\n\nReview queue is now empty."
+    return f"{base}\n\nMoving to next request...\n\n{request_message(next_view)}"
+
+
+def review_analysis_transition_message(analysis, next_view) -> str:
+    base = proposal_analysis_message(analysis)
+    if next_view is None:
+        return f"{base}\n\nReview queue is now empty."
+    return f"{base}\n\nMoving to next request...\n\n{request_message(next_view)}"
 
 
 def alerts_message(alerts) -> str:
@@ -283,21 +311,24 @@ def request_actions_markup(request) -> dict[str, object] | None:
             rows.append(
                 [
                     {"text": "More Analysis", "callback_data": request_callback("analysis", request.request_id)},
-                    {"text": "Details", "callback_data": request_callback("details", request.request_id)},
+                    {"text": "Skip", "callback_data": request_callback("skip", request.request_id)},
                 ]
             )
+            rows.append([{"text": "Details", "callback_data": request_callback("details", request.request_id)}])
     elif request.request_type == OperatorActionRequestType.ALERT_NOTIFICATION:
         rows.append(
             [
                 {"text": "Acknowledge", "callback_data": request_callback("acknowledge", request.request_id)},
-                {"text": "Details", "callback_data": request_callback("details", request.request_id)},
+                {"text": "Skip", "callback_data": request_callback("skip", request.request_id)},
             ]
         )
+        rows.append([{"text": "Details", "callback_data": request_callback("details", request.request_id)}])
     elif request.request_type == OperatorActionRequestType.DIAGNOSTICS_ISSUE:
         rows.append(
             [
                 {"text": "Refresh Summary", "callback_data": request_callback("refresh", request.request_id)},
-                {"text": "Details", "callback_data": request_callback("details", request.request_id)},
+                {"text": "Skip", "callback_data": request_callback("skip", request.request_id)},
             ]
         )
+        rows.append([{"text": "Details", "callback_data": request_callback("details", request.request_id)}])
     return {"inline_keyboard": rows} if rows else None

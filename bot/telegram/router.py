@@ -55,6 +55,17 @@ class TelegramRouter:
             return TelegramOutboundMessage(chat_id, formatter.scan_message(self.operator_service.get_scanner_results()))
         if command == "/inbox":
             return TelegramOutboundMessage(chat_id, formatter.inbox_message(self.operator_service.list_inbox()))
+        if command == "/review":
+            return TelegramOutboundMessage(chat_id, formatter.review_queue_message(self.operator_service.list_review_queue()))
+        if command == "/review-next":
+            next_request = self.operator_service.get_next_review_request()
+            if next_request is None:
+                return TelegramOutboundMessage(chat_id, "Review Queue\n\nNo open requests.")
+            return TelegramOutboundMessage(
+                chat_id,
+                formatter.request_message(next_request),
+                reply_markup=formatter.request_actions_markup(next_request.request),
+            )
         if command == "/request":
             if len(parts) < 2:
                 raise ValueError("Usage: /request <id>")
@@ -79,11 +90,11 @@ class TelegramRouter:
             if len(parts) < 2:
                 raise ValueError("Usage: /approve <id>")
             if parts[1].startswith("req_"):
-                result = self.operator_service.apply_request_action(parts[1], "approve", chat_id)
+                result, next_view = self.operator_service.apply_request_action_and_get_next(parts[1], "approve", chat_id)
                 return TelegramOutboundMessage(
                     chat_id,
-                    formatter.request_action_message(result),
-                    reply_markup=formatter.request_actions_markup(result.request),
+                    formatter.review_transition_message(result, next_view),
+                    reply_markup=None if next_view is None else formatter.request_actions_markup(next_view.request),
                 )
             proposal = self.operator_service.approve_proposal(parts[1], chat_id)
             return TelegramOutboundMessage(chat_id, formatter.proposal_action_message("approve", proposal))
@@ -91,11 +102,11 @@ class TelegramRouter:
             if len(parts) < 2:
                 raise ValueError("Usage: /reject <id>")
             if parts[1].startswith("req_"):
-                result = self.operator_service.apply_request_action(parts[1], "reject", chat_id)
+                result, next_view = self.operator_service.apply_request_action_and_get_next(parts[1], "reject", chat_id)
                 return TelegramOutboundMessage(
                     chat_id,
-                    formatter.request_action_message(result),
-                    reply_markup=formatter.request_actions_markup(result.request),
+                    formatter.review_transition_message(result, next_view),
+                    reply_markup=None if next_view is None else formatter.request_actions_markup(next_view.request),
                 )
             proposal = self.operator_service.reject_proposal(parts[1], chat_id)
             return TelegramOutboundMessage(chat_id, formatter.proposal_action_message("reject", proposal))
@@ -103,11 +114,11 @@ class TelegramRouter:
             if len(parts) < 2:
                 raise ValueError("Usage: /cancel <id>")
             if parts[1].startswith("req_"):
-                result = self.operator_service.apply_request_action(parts[1], "cancel", chat_id)
+                result, next_view = self.operator_service.apply_request_action_and_get_next(parts[1], "cancel", chat_id)
                 return TelegramOutboundMessage(
                     chat_id,
-                    formatter.request_action_message(result),
-                    reply_markup=formatter.request_actions_markup(result.request),
+                    formatter.review_transition_message(result, next_view),
+                    reply_markup=None if next_view is None else formatter.request_actions_markup(next_view.request),
                 )
             proposal = self.operator_service.cancel_proposal(parts[1], chat_id)
             return TelegramOutboundMessage(chat_id, formatter.proposal_action_message("cancel", proposal))
@@ -115,7 +126,7 @@ class TelegramRouter:
             if len(parts) < 2:
                 raise ValueError("Usage: /analysis <id>")
             if parts[1].startswith("req_"):
-                result = self.operator_service.apply_request_action(parts[1], "analysis", chat_id)
+                result, next_view = self.operator_service.apply_request_action_and_get_next(parts[1], "analysis", chat_id)
                 if result.decision_review is None or result.proposal is None:
                     raise ValueError("Additional analysis unavailable")
                 analysis = type(
@@ -129,12 +140,23 @@ class TelegramRouter:
                 )()
                 return TelegramOutboundMessage(
                     chat_id,
-                    formatter.proposal_analysis_message(analysis),
-                    reply_markup=formatter.request_actions_markup(result.request),
+                    formatter.review_analysis_transition_message(analysis, next_view),
+                    reply_markup=None if next_view is None else formatter.request_actions_markup(next_view.request),
                 )
             return TelegramOutboundMessage(
                 chat_id,
                 formatter.proposal_analysis_message(self.operator_service.request_additional_analysis(parts[1], chat_id)),
+            )
+        if command == "/skip":
+            if len(parts) < 2:
+                raise ValueError("Usage: /skip <request_id>")
+            if not parts[1].startswith("req_"):
+                raise ValueError("Usage: /skip <request_id>")
+            result, next_view = self.operator_service.apply_request_action_and_get_next(parts[1], "skip", chat_id)
+            return TelegramOutboundMessage(
+                chat_id,
+                formatter.review_transition_message(result, next_view),
+                reply_markup=None if next_view is None else formatter.request_actions_markup(next_view.request),
             )
         if command == "/alerts":
             return TelegramOutboundMessage(chat_id, formatter.alerts_message(self.operator_service.list_alerts()))
@@ -166,7 +188,7 @@ class TelegramRouter:
                             callback_query_id=callback_id,
                         )
                     ]
-                result = self.operator_service.apply_request_action(request_id, action, chat_id)
+                result, next_view = self.operator_service.apply_request_action_and_get_next(request_id, action, chat_id)
                 if action == "analysis" and result.decision_review is not None and result.proposal is not None:
                     analysis = type(
                         "InboxAnalysis",
@@ -180,16 +202,16 @@ class TelegramRouter:
                     return [
                         TelegramOutboundMessage(
                             chat_id,
-                            formatter.proposal_analysis_message(analysis),
-                            reply_markup=formatter.request_actions_markup(result.request),
+                            formatter.review_analysis_transition_message(analysis, next_view),
+                            reply_markup=None if next_view is None else formatter.request_actions_markup(next_view.request),
                             callback_query_id=callback_id,
                         )
                     ]
                 return [
                     TelegramOutboundMessage(
                         chat_id,
-                        formatter.request_action_message(result),
-                        reply_markup=formatter.request_actions_markup(result.request),
+                        formatter.review_transition_message(result, next_view),
+                        reply_markup=None if next_view is None else formatter.request_actions_markup(next_view.request),
                         callback_query_id=callback_id,
                     )
                 ]

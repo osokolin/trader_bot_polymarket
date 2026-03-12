@@ -73,6 +73,7 @@ class _FakeTelegramOperatorService:
         self.cancelled: list[tuple[str, int]] = []
         self.analysis_requested: list[tuple[str, int]] = []
         self.request_actions: list[tuple[str, str, int]] = []
+        self._requests = self._build_requests()
 
     def get_status(self):
         return {
@@ -129,6 +130,43 @@ class _FakeTelegramOperatorService:
         return _build_proposal()
 
     def list_inbox(self, limit: int = 10):
+        return self._requests[:limit]
+
+    def list_review_queue(self, limit: int = 10):
+        return [item for item in self._requests if item.status == OperatorActionRequestStatus.OPEN][:limit]
+
+    def get_next_review_request(self):
+        queue = self.list_review_queue(limit=1)
+        if not queue:
+            return None
+        request = queue[0]
+        if request.entity_type == OperatorActionEntityType.PROPOSAL:
+            proposal = _build_proposal()
+            proposal.proposal_id = request.entity_id
+            return type(
+                "RequestView",
+                (),
+                {
+                    "request": request,
+                    "proposal": proposal,
+                    "alert": None,
+                    "diagnostics_label": None,
+                    "diagnostics_check": None,
+                },
+            )()
+        return type(
+            "RequestView",
+            (),
+            {
+                "request": request,
+                "proposal": None,
+                "alert": self.list_alerts()[0],
+                "diagnostics_label": None,
+                "diagnostics_check": None,
+            },
+        )()
+
+    def _build_requests(self):
         now = utc_now()
         return [
             type(
@@ -146,19 +184,36 @@ class _FakeTelegramOperatorService:
                     "created_at": now,
                     "updated_at": now,
                 },
-            )()
-        ][:limit]
+            )(),
+            type(
+                "Request",
+                (),
+                {
+                    "request_id": "req_alert",
+                    "request_type": OperatorActionRequestType.ALERT_NOTIFICATION,
+                    "entity_type": OperatorActionEntityType.ALERT,
+                    "entity_id": "alert_1",
+                    "status": OperatorActionRequestStatus.OPEN,
+                    "title": "Alert Notification",
+                    "summary": "Proposal proposal_91af is nearing TTL expiry",
+                    "payload": {"alert_id": "alert_1"},
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )(),
+        ]
 
     def get_request_details(self, request_id: str):
-        if request_id != "req_91af":
+        request = next((item for item in self._requests if item.request_id == request_id), None)
+        if request is None:
             raise ValueError("Unknown request")
         return type(
             "RequestView",
             (),
             {
-                "request": self.list_inbox()[0],
-                "proposal": _build_proposal(),
-                "alert": None,
+                "request": request,
+                "proposal": _build_proposal() if request.entity_type == OperatorActionEntityType.PROPOSAL else None,
+                "alert": None if request.entity_type == OperatorActionEntityType.PROPOSAL else self.list_alerts()[0],
                 "diagnostics_label": None,
                 "diagnostics_check": None,
             },
@@ -250,8 +305,23 @@ class _FakeTelegramOperatorService:
 
     def apply_request_action(self, request_id: str, action: str, chat_id: int):
         self.request_actions.append((request_id, action, chat_id))
-        request = self.list_inbox()[0]
+        request = next(item for item in self._requests if item.request_id == request_id)
+        if action == "skip":
+            request.status = OperatorActionRequestStatus.ACKNOWLEDGED
+            return type(
+                "RequestActionResult",
+                (),
+                {
+                    "request": request,
+                    "action": action,
+                    "proposal": None,
+                    "alert": None,
+                    "decision_review": None,
+                    "diagnostics_result": None,
+                },
+            )()
         if action == "analysis":
+            request.status = OperatorActionRequestStatus.ACKNOWLEDGED
             return type(
                 "RequestActionResult",
                 (),
@@ -265,6 +335,7 @@ class _FakeTelegramOperatorService:
                 },
             )()
         if action == "acknowledge":
+            request.status = OperatorActionRequestStatus.ACTIONED
             return type(
                 "RequestActionResult",
                 (),
@@ -277,6 +348,7 @@ class _FakeTelegramOperatorService:
                     "diagnostics_result": None,
                 },
             )()
+        request.status = OperatorActionRequestStatus.ACTIONED
         return type(
             "RequestActionResult",
             (),
@@ -289,6 +361,10 @@ class _FakeTelegramOperatorService:
                 "diagnostics_result": self.get_diagnostics() if action == "refresh" else None,
             },
         )()
+
+    def apply_request_action_and_get_next(self, request_id: str, action: str, chat_id: int):
+        result = self.apply_request_action(request_id, action, chat_id)
+        return result, self.get_next_review_request()
 
 
 class _FakeTelegramClient:
@@ -375,6 +451,16 @@ class TelegramOperatorTest(unittest.TestCase):
         self.assertIn("req_91af", request.text)
         self.assertIsNotNone(request.reply_markup)
 
+    def test_review_queue_listing_and_review_next(self) -> None:
+        service = _FakeTelegramOperatorService()
+        router = TelegramRouter(TelegramOperatorAuth({123}), service)  # type: ignore[arg-type]
+        overview = router.handle_update({"message": {"chat": {"id": 123}, "text": "/review"}})[0]
+        next_request = router.handle_update({"message": {"chat": {"id": 123}, "text": "/review-next"}})[0]
+        self.assertIn("Review Queue", overview.text)
+        self.assertIn("Open requests: 2", overview.text)
+        self.assertIn("req_91af", next_request.text)
+        self.assertIsNotNone(next_request.reply_markup)
+
     def test_proposals_and_proposal_detail_commands(self) -> None:
         service = _FakeTelegramOperatorService()
         router = TelegramRouter(TelegramOperatorAuth({123}), service)  # type: ignore[arg-type]
@@ -442,6 +528,19 @@ class TelegramOperatorTest(unittest.TestCase):
             }
         )
         self.assertEqual(unauthorized[0].text, "Unauthorized operator.")
+
+    def test_review_queue_moves_to_next_request_after_action_and_skip(self) -> None:
+        service = _FakeTelegramOperatorService()
+        router = TelegramRouter(TelegramOperatorAuth({123}), service)  # type: ignore[arg-type]
+        approve = router.handle_update({"message": {"chat": {"id": 123}, "text": "/approve req_91af"}})[0]
+        self.assertIn("Moving to next request", approve.text)
+        self.assertIn("req_alert", approve.text)
+        self.assertEqual(service.request_actions[0], ("req_91af", "approve", 123))
+
+        skip = router.handle_update({"message": {"chat": {"id": 123}, "text": "/skip req_alert"}})[0]
+        self.assertIn("Request skipped", skip.text)
+        self.assertIn("Review queue is now empty", skip.text)
+        self.assertEqual(service.request_actions[1], ("req_alert", "skip", 123))
 
     def test_router_hides_raw_tracebacks(self) -> None:
         service = _FakeTelegramOperatorService()
@@ -676,6 +775,27 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
         self.assertEqual(reviews[0]["action"], "request_analysis")
         self.assertIn('"action": "analysis"', reviews[0]["payload_json"])
         self.assertIn(f'"request_id": "{request.request_id}"', reviews[0]["payload_json"])
+
+    def test_review_queue_skip_and_next_request_are_lifecycle_safe(self) -> None:
+        proposal = self._create_proposal()
+        proposal_request = self.decision_inbox_service.create_proposal_review_request(proposal)
+        alert = self.notifications_service.create_simulated_execution_alert(
+            intent_id="intent_1",
+            proposal_id=proposal.proposal_id,
+            market_id=proposal.market_id,
+            execution_id="exec_1",
+            status="filled",
+        )
+        alert_request = self.decision_inbox_service.create_alert_request(alert)
+        queue = self.operator_service.list_review_queue()
+        self.assertEqual([item.request_id for item in queue], [proposal_request.request_id, alert_request.request_id])
+
+        result, next_view = self.operator_service.apply_request_action_and_get_next(proposal_request.request_id, "skip", chat_id=555)
+        self.assertEqual(result.request.status, OperatorActionRequestStatus.ACKNOWLEDGED)
+        self.assertEqual(self.execution_adapter.submit_calls, 0)
+        self.assertIsNotNone(next_view)
+        assert next_view is not None
+        self.assertEqual(next_view.request.request_id, alert_request.request_id)
 
 
 if __name__ == "__main__":
