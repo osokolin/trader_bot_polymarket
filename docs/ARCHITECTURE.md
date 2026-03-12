@@ -22,7 +22,7 @@ market snapshot + signal + probability
 
 - `bot/config`: YAML parsing, config merge, typed config models
 - `bot/domain`: enums and domain dataclasses used across services
-- `bot/storage`: SQLite schema bootstrap and repositories
+- `bot/storage`: SQLite schema bootstrap and repositories, split by bounded storage area with `repositories.py` kept as a thin compatibility facade
 - `bot/policies`: policy layers and composite policy
 - `bot/services`: sizing, proposal generation, lifecycle transitions, audit logging, approval-time snapshot wiring, and cached live market-data retrieval
 - `bot/adapters/polymarket`: Gamma metadata, public CLOB `/book` + `/midpoint` + `/price`, public market WebSocket, and execution abstractions
