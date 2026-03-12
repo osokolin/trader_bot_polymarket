@@ -66,6 +66,7 @@ from bot.services.proposal_lifecycle import ProposalLifecycleError, ProposalLife
 from bot.services.reporting import ReportingService
 from bot.services.runtime_safety import build_runtime_safety_snapshot
 from bot.services.saved_views import SavedViewService
+from bot.services.telegram_operator_service import TelegramOperatorService
 from bot.storage.db import Database
 from bot.storage.repositories import (
     AlertRepository,
@@ -82,6 +83,9 @@ from bot.storage.repositories import (
     WatchlistRepository,
 )
 from bot.ui import OperatorDashboardApp, OperatorDashboardServices, serve_ui
+from bot.telegram.auth import TelegramOperatorAuth
+from bot.telegram.bot_app import build_telegram_bot_app
+from bot.telegram.router import TelegramRouter
 
 
 def _catalog_scope_to_flags(scope: str) -> tuple[bool, bool]:
@@ -361,6 +365,10 @@ def build_parser() -> argparse.ArgumentParser:
     ui_serve = ui_sub.add_parser("serve")
     ui_serve.add_argument("--host", default="127.0.0.1")
     ui_serve.add_argument("--port", type=int, default=8080)
+
+    telegram = subparsers.add_parser("telegram")
+    telegram_sub = telegram.add_subparsers(dest="telegram_command")
+    telegram_sub.add_parser("serve")
     return parser
 
 
@@ -459,6 +467,19 @@ def main(argv: list[str] | None = None) -> int:
                 analytics_service,
             )
             position_repository = PositionRepository(connection)
+            telegram_operator_service = TelegramOperatorService(
+                settings=settings,
+                profile=args.profile,
+                execution_adapter=execution_service.execution_adapter,
+                proposal_service=proposal_service,
+                notifications_service=notifications_service,
+                scanner_service=market_opportunity_scanner,
+                diagnostics_service=PolymarketDiagnosticsService(
+                    gamma_client=gamma_client,
+                    clob_client=ClobMarketDataClient(http_client=client.http_client),
+                    websocket_client=PublicMarketWebSocketClient(),
+                ),
+            )
             if args.command == "ui" and args.ui_command == "serve":
                 serve_ui(
                     OperatorDashboardApp(
@@ -478,6 +499,19 @@ def main(argv: list[str] | None = None) -> int:
                     args.host,
                     args.port,
                 )
+                return 0
+            if args.command == "telegram" and args.telegram_command == "serve":
+                telegram_app = build_telegram_bot_app(
+                    TelegramRouter(
+                        auth=TelegramOperatorAuth.from_env(),
+                        operator_service=telegram_operator_service,
+                    ),
+                    telegram_operator_service,
+                )
+                try:
+                    telegram_app.serve_forever()
+                finally:
+                    telegram_app.client.close()
                 return 0
             if args.command == "demo" and args.demo_command == "seed":
                 result = seed_demo_data(
