@@ -18,7 +18,6 @@ from bot.services.audit_log import AuditLogService
 from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService
-from bot.services.market_catalog import MarketCatalogService
 from bot.services.operator_notifications import OperatorNotificationsService
 from bot.services.outcome_analysis import OutcomeAnalysisService
 from bot.services.proposal_engine import ProposalEngine

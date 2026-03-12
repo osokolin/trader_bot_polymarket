@@ -29,7 +29,6 @@ from bot.domain.models import Market, MarketDataSnapshot, OrderBookSnapshot, Pro
 from bot.services.audit_log import AuditLogService
 from bot.services.approval_snapshot_provider import PolymarketApprovalSnapshotProvider
 from bot.services.market_sync import LiveMarketDataService
-from bot.services.realtime_market_feed import RealtimeMarketFeedService
 from bot.services.probability_engine import EdgeAdjustedProbabilityProvider
 from bot.services.proposal_engine import ProposalEngine
 from bot.services.proposal_lifecycle import ProposalLifecycleError, ProposalLifecycleService

@@ -11,8 +11,32 @@ requires-python = ">=3.12"
 authors = [{ name = "OpenAI Codex" }]
 dependencies = ["PyYAML>=6.0", "httpx>=0.28", "websockets>=15.0"]
 
+[project.optional-dependencies]
+dev = ["pytest>=9.0", "ruff>=0.15", "mypy>=1.19", "types-PyYAML>=6.0"]
+
 [project.scripts]
 bot = "bot.cli.app:main"
 
 [tool.setuptools.packages.find]
 include = ["bot*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["F"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["bot/storage/db.py", "bot/storage/migrations"]
+warn_unused_configs = true
+check_untyped_defs = true
+ignore_missing_imports = true
+follow_imports = "silent"
+pretty = true

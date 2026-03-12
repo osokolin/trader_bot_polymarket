@@ -47,7 +47,6 @@ from bot.services.market_catalog import MarketCatalogService
 from bot.services.market_opportunity_scanner import MarketOpportunityScannerService
 from bot.services.opportunity_proposal_bridge import OpportunityProposalBridgeService
 from bot.services.polymarket_diagnostics import PolymarketDiagnosticsService
-from bot.services.proposal_lifecycle import ProposalLifecycleError, ProposalLifecycleService
 from bot.services.market_sync import LiveMarketDataService
 from bot.services.realtime_market_feed import RealtimeMarketFeedService
 from bot.services.runtime_safety import build_runtime_safety_snapshot
@@ -107,7 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_list_options(proposals_list)
     show = proposals_sub.add_parser("show")
     show.add_argument("id")
-    latest_approved = proposals_sub.add_parser("latest-approved")
+    proposals_sub.add_parser("latest-approved")
     proposal_probability = proposals_sub.add_parser("probability")
     proposal_probability.add_argument("id")
     proposal_compare = proposals_sub.add_parser("compare")
@@ -379,7 +378,6 @@ def main(argv: list[str] | None = None) -> int:
         execution_service = container.execution_service
         analytics_service = container.analytics_service
         decision_review_service = container.decision_review_service
-        decision_inbox_service = container.decision_inbox_service
         execution_evaluation_service = container.execution_evaluation_service
         outcome_analysis_service = container.outcome_analysis_service
         saved_view_service = container.saved_view_service

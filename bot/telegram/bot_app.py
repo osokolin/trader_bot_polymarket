@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from bot.telegram import formatter
-from bot.telegram.router import TelegramRouter, TelegramOutboundMessage
+from bot.telegram.router import TelegramRouter
 from bot.services.telegram_operator_service import TelegramOperatorService
 
 

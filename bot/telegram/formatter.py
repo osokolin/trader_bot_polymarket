@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from bot.domain.enums import OperatorActionEntityType, OperatorActionRequestStatus, OperatorActionRequestType, ProposalStatus
+from bot.domain.enums import OperatorActionRequestStatus, OperatorActionRequestType, ProposalStatus
 from bot.services.telegram_operator_service import TelegramNotification
 from bot.telegram.actions import proposal_callback, request_callback
 

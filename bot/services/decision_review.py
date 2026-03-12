@@ -31,7 +31,6 @@ class DecisionReviewService:
 
     def create_for_proposal(self, proposal_id: str) -> DecisionReview:
         proposal = self.proposal_service.latest_proposal_state(proposal_id)
-        snapshot = self.proposal_service.latest_probability_snapshot_for_proposal(proposal_id)
         drift = self.proposal_service.compare_probability_snapshots_for_proposal(proposal_id)
         latest_intent = self.execution_service.latest_intent_for_proposal(proposal_id)
         latest_execution = None if latest_intent is None else self.execution_service.latest_simulated_execution(latest_intent.intent_id)
