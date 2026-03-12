@@ -121,6 +121,8 @@ def hero(title: str, subtitle: str) -> str:
         <a href="/research">Исследование</a>
         <a href="/decision-reviews">Разбор решений</a>
         <a href="/analysis">Анализ итогов</a>
+        <a href="/catalog/markets">Рынки</a>
+        <a href="/catalog/events">События</a>
         <a href="/views">Сохраненные виды</a>
       </nav>
     </section>

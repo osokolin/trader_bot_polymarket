@@ -18,6 +18,7 @@ from bot.services.audit_log import AuditLogService
 from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService
+from bot.services.market_catalog import MarketCatalogService
 from bot.services.operator_notifications import OperatorNotificationsService
 from bot.services.outcome_analysis import OutcomeAnalysisService
 from bot.services.proposal_engine import ProposalEngine
@@ -150,6 +151,15 @@ class OperatorUiTest(unittest.TestCase):
                 self.assertIn(f"/research/markets/{self.market.market_id}", research_index)
                 self.assertIn(f"/decision-reviews/markets/{self.market.market_id}", research_index)
 
+                _, market_catalog = app.render_response("/catalog/markets")
+                self.assertIn("Каталог рынков", market_catalog)
+                self.assertIn("Will CPI print below consensus?", market_catalog)
+                self.assertIn(f"/markets/live/{self.market.market_id}", market_catalog)
+
+                _, event_catalog = app.render_response("/catalog/events")
+                self.assertIn("Каталог событий", event_catalog)
+                self.assertIn("Macro Calendar", event_catalog)
+
                 _, views = app.render_response("/views")
                 self.assertIn("Сохраненные виды", views)
                 self.assertIn("approved-proposals", views)
@@ -258,6 +268,7 @@ class OperatorUiTest(unittest.TestCase):
             notifications_service,
             AnalyticsService(proposal_service, execution_service),
         )
+        market_catalog_service = _FakeMarketCatalogService(self.market, self.other_market)
 
         pending = proposal_service.create(
             self.settings,
@@ -316,6 +327,60 @@ class OperatorUiTest(unittest.TestCase):
                 outcome_analysis_service=outcome_analysis_service,
                 saved_view_service=saved_view_service,
                 reporting_service=reporting_service,
+                market_catalog_service=market_catalog_service,
             )
         )
         return connection, app, approved.proposal_id, pending.proposal_id, intent.intent_id, alerts[0].alert_id
+
+
+class _FakeMarketCatalogService:
+    def __init__(self, primary_market: Market, secondary_market: Market) -> None:
+        self.primary_market = primary_market
+        self.secondary_market = secondary_market
+
+    def list_markets(self, limit: int = 20, active: bool = True, closed: bool = False):
+        from bot.adapters.polymarket.models import GammaMarketSummary
+
+        return [
+            GammaMarketSummary(
+                market_id=self.primary_market.market_id,
+                question=self.primary_market.title,
+                event_id="evt_macro",
+                slug="cpi-below-consensus",
+                category=self.primary_market.category,
+                active=True,
+                closed=False,
+                archived=False,
+                enable_order_book=True,
+                liquidity_usd=self.primary_market.liquidity_usd,
+                volume_usd=10000.0,
+            ),
+            GammaMarketSummary(
+                market_id=self.secondary_market.market_id,
+                question=self.secondary_market.title,
+                event_id="evt_macro",
+                slug="payrolls-beat-estimates",
+                category=self.secondary_market.category,
+                active=True,
+                closed=False,
+                archived=False,
+                enable_order_book=True,
+                liquidity_usd=self.secondary_market.liquidity_usd,
+                volume_usd=8000.0,
+            ),
+        ][:limit]
+
+    def list_events(self, limit: int = 20, active: bool = True, closed: bool = False):
+        from bot.adapters.polymarket.models import GammaEventSummary
+
+        return [
+            GammaEventSummary(
+                event_id="evt_macro",
+                title="Macro Calendar",
+                slug="macro-calendar",
+                active=True,
+                closed=False,
+                archived=False,
+                market_count=2,
+            )
+        ][:limit]

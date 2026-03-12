@@ -308,6 +308,29 @@ def market_data_lines(snapshot) -> list[str]:
     )
 
 
+def market_catalog_lines(items) -> list[str]:
+    lines = [f"market_count: {len(items)}"]
+    for item in items:
+        liquidity = "-" if item.liquidity_usd is None else f"{item.liquidity_usd:.2f}"
+        volume = "-" if item.volume_usd is None else f"{item.volume_usd:.2f}"
+        lines.append(
+            f"market_id={item.market_id} | question={item.question} | event_id={item.event_id or '-'} | "
+            f"category={item.category} | active={item.active} | closed={item.closed} | "
+            f"orderbook={item.enable_order_book} | liquidity_usd={liquidity} | volume_usd={volume} | slug={item.slug or '-'}"
+        )
+    return lines
+
+
+def event_catalog_lines(items) -> list[str]:
+    lines = [f"event_count: {len(items)}"]
+    for item in items:
+        lines.append(
+            f"event_id={item.event_id} | title={item.title} | active={item.active} | "
+            f"closed={item.closed} | archived={item.archived} | markets={item.market_count} | slug={item.slug or '-'}"
+        )
+    return lines
+
+
 def alert_lines(alerts) -> list[str]:
     lines = [f"alert_count: {len(alerts)}"]
     for alert in alerts:

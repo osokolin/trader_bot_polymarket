@@ -15,3 +15,5 @@ __pycache__/
 *.db
 .DS_Store
 __MACOSX/
+.env
+.idea/

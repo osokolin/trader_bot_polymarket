@@ -168,6 +168,17 @@ Public market-data integration uses:
 - public market WebSocket updates with reconnect/backoff and receive-timeout fail-closed handling
 - cache-first market inspection with explicit refresh
 
+Catalog entry points:
+- CLI: `bot markets catalog --scope active|closed|all [--limit N]`
+- CLI: `bot events catalog --scope active|closed|all [--limit N]`
+- UI: `/catalog/markets`
+- UI: `/catalog/events`
+
+Examples:
+- `bot markets catalog --scope active`
+- `bot markets catalog --scope closed`
+- `bot markets catalog --scope all`
+
 Approval revalidation now fails closed if public market data is stale, malformed, or unavailable.
 This integration does not enable live trading:
 - no authenticated trading

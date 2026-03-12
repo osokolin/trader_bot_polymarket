@@ -14,6 +14,32 @@ class GammaMarketMetadata:
 
 
 @dataclass(slots=True)
+class GammaMarketSummary:
+    market_id: str
+    question: str
+    event_id: str | None
+    slug: str | None
+    category: str
+    active: bool
+    closed: bool
+    archived: bool
+    enable_order_book: bool
+    liquidity_usd: float | None = None
+    volume_usd: float | None = None
+
+
+@dataclass(slots=True)
+class GammaEventSummary:
+    event_id: str
+    title: str
+    slug: str | None
+    active: bool
+    closed: bool
+    archived: bool
+    market_count: int
+
+
+@dataclass(slots=True)
 class ClobOrderBook:
     asset_id: str
     snapshot: OrderBookSnapshot
