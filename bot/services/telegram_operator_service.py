@@ -6,8 +6,10 @@ from time import monotonic
 from bot.config.models import Settings
 from bot.domain.enums import AlertState, ProposalStatus
 from bot.domain.models import DecisionReview, OperatorActionRequest, OperatorAlert, TradeProposal
+from bot.services.audit_log import AuditLogService
 from bot.services.decision_inbox import DecisionInboxActionResult, DecisionInboxRequestView, DecisionInboxService
 from bot.services.decision_review import DecisionReviewService
+from bot.services.market_opportunity_alerts import MarketOpportunityAlertScanResult, MarketOpportunityAlertService
 from bot.services.market_opportunity_scanner import MarketOpportunityScannerService
 from bot.services.polymarket_diagnostics import PolymarketDiagnosticsResult, PolymarketDiagnosticsService
 from bot.services.proposal_lifecycle import ProposalLifecycleError, ProposalLifecycleService
@@ -28,23 +30,31 @@ class TelegramProposalAnalysis:
     scanner_rationale: str
 
 
+class TelegramCooldownError(RuntimeError):
+    pass
+
+
 @dataclass(slots=True)
 class TelegramOperatorService:
     settings: Settings
     profile: str
     execution_adapter: object
+    audit_log: AuditLogService
     proposal_service: ProposalLifecycleService
     decision_review_service: DecisionReviewService
     decision_inbox_service: DecisionInboxService
     notifications_service: OperatorNotificationsService
     scanner_service: MarketOpportunityScannerService
+    market_opportunity_alert_service: MarketOpportunityAlertService | None
     diagnostics_service: PolymarketDiagnosticsService
     _primed: bool = False
     _seen_proposal_ids: set[str] = field(default_factory=set)
     _seen_alert_ids: set[str] = field(default_factory=set)
     _last_diagnostics_failure: str | None = None
     _last_diagnostics_check_monotonic: float = 0.0
+    _last_opportunity_scan_monotonic: float = 0.0
     diagnostics_poll_interval_seconds: float = 300.0
+    opportunity_scan_cooldown_seconds: float = 60.0
 
     def get_status(self) -> dict[str, object]:
         safety = build_runtime_safety_snapshot(
@@ -71,6 +81,32 @@ class TelegramOperatorService:
 
     def get_scanner_results(self, limit: int = 5):
         return self.scanner_service.scan(self.settings, limit=limit)
+
+    def scan_opportunities(self, chat_id: int, limit: int = 200) -> MarketOpportunityAlertScanResult:
+        if self.market_opportunity_alert_service is None:
+            raise RuntimeError("Opportunity alerts are unavailable.")
+        now = monotonic()
+        remaining = self.opportunity_scan_cooldown_seconds - (now - self._last_opportunity_scan_monotonic)
+        if remaining > 0:
+            raise TelegramCooldownError(
+                f"Opportunity scan is cooling down. Try again in {int(remaining) + 1}s."
+            )
+        self._last_opportunity_scan_monotonic = now
+        result = self.market_opportunity_alert_service.scan(self.settings, limit=limit)
+        self.audit_log.log(
+            event_type="telegram_opportunity_scan",
+            entity_id=f"chat:{chat_id}",
+            message="Telegram operator triggered opportunity alert scan",
+            payload={
+                "source": "telegram",
+                "chat_id": chat_id,
+                "limit": limit,
+                "scanned_count": result.scanned_count,
+                "relevant_count": result.relevant_count,
+                "created_alert_count": len(result.created_alerts),
+            },
+        )
+        return result
 
     def list_proposals(self, limit: int = 5) -> list[TradeProposal]:
         return self.proposal_service.list_active_proposals()[:limit]

@@ -317,11 +317,13 @@ def build_app_container(
             settings=settings,
             profile=profile,
             execution_adapter=execution_service.execution_adapter,
+            audit_log=audit_log,
             proposal_service=proposal_service,
             decision_review_service=decision_review_service,
             decision_inbox_service=decision_inbox_service,
             notifications_service=notifications_service,
             scanner_service=market_opportunity_scanner,
+            market_opportunity_alert_service=market_opportunity_alert_service,
             diagnostics_service=diagnostics_service,
         )
 

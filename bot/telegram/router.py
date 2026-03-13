@@ -53,6 +53,17 @@ class TelegramRouter:
             return TelegramOutboundMessage(chat_id, formatter.diagnostics_message(self.operator_service.get_diagnostics()))
         if command == "/scan":
             return TelegramOutboundMessage(chat_id, formatter.scan_message(self.operator_service.get_scanner_results()))
+        if command == "/scan-opportunities":
+            limit = 200
+            if len(parts) >= 2:
+                try:
+                    limit = int(parts[1])
+                except ValueError as exc:
+                    raise ValueError("Usage: /scan-opportunities [limit]") from exc
+            return TelegramOutboundMessage(
+                chat_id,
+                formatter.opportunity_scan_message(self.operator_service.scan_opportunities(chat_id, limit=limit)),
+            )
         if command == "/inbox":
             return TelegramOutboundMessage(chat_id, formatter.inbox_message(self.operator_service.list_inbox()))
         if command == "/review":
