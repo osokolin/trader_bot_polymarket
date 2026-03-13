@@ -42,6 +42,7 @@ At the current milestone depth:
 36. A persisted Decision Inbox now tracks operator action requests for proposal review, alert notifications, and diagnostics issues; Telegram exposes those requests through `/inbox`, `/request <id>`, and request-scoped action cards that resolve through the decision inbox service before delegating to lifecycle or alert services.
 37. Telegram review sessions can now use `/review` and `/review-next` to process open decision requests sequentially in created order, with request-safe actions and skip support that keep execution boundaries unchanged.
 
+
 Execution adapters remain non-autonomous; approval currently stops at a verified `approved` state.
 When a live order book is available, approval revalidation uses fresh public market metadata plus fresh CLOB `/book` and `/midpoint` pricing, and `current_price` currently uses the midpoint as a temporary execution-price proxy.
 The separate CLOB `/price` value is treated as a reference-price field; if it is unavailable, the snapshot records that explicitly in pricing metadata instead of fabricating a substitute.
@@ -69,3 +70,18 @@ The production web UI now requires authentication before any operator page is re
 Web auth is currently single-user (`osokolin`) with a password configured out-of-band through `bot auth set-password`, a server-side session cookie, and an optional remember-browser cookie stored only in HttpOnly cookies.
 Authenticated web mutations are CSRF-protected, and the `/auth/security` page allows the operator to log out, revoke the current browser remember token, or revoke all active sessions and remember tokens.
 Web auth does not alter proposal, inbox, Telegram, or execution semantics; it only gates access to the existing UI.
+
+## Opportunity Alerts
+
+Discovery alerts are generated automatically by the background scanner.
+
+Alerts appear when:
+- a new relevant market is detected
+- a relevant market has high liquidity
+- a relevant market is resolving soon
+- a relevant market already has system context
+
+Alerts are delivered via:
+- CLI
+- Web UI
+- Telegram notifications
