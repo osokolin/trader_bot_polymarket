@@ -172,6 +172,70 @@ class MarketOpportunityAlertServiceTest(unittest.TestCase):
             self.assertTrue(any("Senate control" in summary for summary in summaries))
             self.assertTrue(any("Iran" in summary for summary in summaries))
 
+    def test_country_keyword_sports_markets_do_not_trigger_alerts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            notifications = self._build_notifications(tmp_dir)
+            service = MarketOpportunityAlertService(
+                market_catalog_service=_FakeMarketCatalogService(
+                    [
+                        _market(
+                            "m1",
+                            question="Will Ukraine qualify for the 2026 FIFA World Cup?",
+                            category="sports",
+                            event_title="2026 FIFA World Cup qualifying",
+                            slug="ukraine-world-cup-qualify",
+                        ),
+                        _market(
+                            "m2",
+                            question="Will Iran win the 2026 FIFA World Cup?",
+                            category="sports",
+                            event_title="2026 FIFA World Cup",
+                            slug="iran-world-cup-win",
+                        ),
+                    ]
+                ),
+                notifications_service=notifications,
+                market_research_service=_FakeMarketResearchService({}),
+            )
+
+            result = service.scan(self.settings)
+
+            self.assertEqual(result.relevant_count, 0)
+            self.assertEqual(result.created_alerts, [])
+
+    def test_country_keyword_geopolitical_markets_still_trigger_alerts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            notifications = self._build_notifications(tmp_dir)
+            service = MarketOpportunityAlertService(
+                market_catalog_service=_FakeMarketCatalogService(
+                    [
+                        _market(
+                            "m1",
+                            question="Russia-Ukraine Ceasefire before GTA VI?",
+                            category="world",
+                            event_title="Russia-Ukraine conflict",
+                            slug="russia-ukraine-ceasefire-before-gta-vi",
+                        ),
+                        _market(
+                            "m2",
+                            question="Putin out as President of Russia by end of 2026?",
+                            category="politics",
+                            event_title="Russian politics",
+                            slug="putin-out-as-president-of-russia-by-end-of-2026",
+                        ),
+                    ]
+                ),
+                notifications_service=notifications,
+                market_research_service=_FakeMarketResearchService({}),
+            )
+
+            result = service.scan(self.settings)
+
+            self.assertEqual(result.relevant_count, 2)
+            self.assertTrue(
+                any(alert.alert_type == AlertType.NEW_RELEVANT_MARKET for alert in result.created_alerts)
+            )
+
     def test_high_liquidity_resolving_soon_and_potential_context_alerts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             notifications = self._build_notifications(tmp_dir)
