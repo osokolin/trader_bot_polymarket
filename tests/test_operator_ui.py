@@ -18,7 +18,7 @@ from bot.services.audit_log import AuditLogService
 from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService
-from bot.services.market_catalog import MarketCatalogBrowseQuery, MarketCatalogBrowseResult
+from bot.services.market_catalog import MarketCatalogBrowseQuery, MarketCatalogBrowseResult, MarketCatalogDetail, MarketCatalogOutcome
 from bot.services.operator_notifications import OperatorNotificationsService
 from bot.services.outcome_analysis import OutcomeAnalysisService
 from bot.services.proposal_engine import ProposalEngine
@@ -155,9 +155,16 @@ class OperatorUiTest(unittest.TestCase):
                 self.assertIn("Каталог рынков", market_catalog)
                 self.assertIn("Will CPI print below consensus?", market_catalog)
                 self.assertIn(f"/markets/live/{self.market.market_id}", market_catalog)
+                self.assertIn("/catalog/markets/cpi-below-consensus", market_catalog)
                 self.assertIn("Категории", market_catalog)
                 self.assertIn("сохранить текущий вид", market_catalog)
                 self.assertIn("Macro Signals", market_catalog)
+
+                _, market_detail = app.render_response("/catalog/markets/cpi-below-consensus")
+                self.assertIn("Карточка рынка", market_detail)
+                self.assertIn("Критерии резолюции", market_detail)
+                self.assertIn("Связанные рынки в событии", market_detail)
+                self.assertIn("открыть на Polymarket", market_detail)
 
                 _, event_catalog = app.render_response("/catalog/events")
                 self.assertIn("Каталог событий", event_catalog)
@@ -184,6 +191,9 @@ class OperatorUiTest(unittest.TestCase):
                 _, missing_market_review = app.render_response("/decision-reviews/markets/mkt_missing_snapshot")
                 self.assertIn("Разбор пока недоступен", missing_market_review)
                 self.assertIn("/markets/live/mkt_missing_snapshot", missing_market_review)
+
+                _, market_detail_missing = app.render_response("/catalog/markets/payrolls-beat-estimates")
+                self.assertIn("Правила в API не заполнены", market_detail_missing)
 
                 _, views = app.render_response("/views")
                 self.assertIn("Сохраненные виды", views)
@@ -475,4 +485,37 @@ class _FakeMarketCatalogService:
             items=filtered[: query.limit],
             available_categories=["crypto", "politics"],
             applied_query=query,
+        )
+
+    def get_market_detail(self, slug_or_market_id: str) -> MarketCatalogDetail:
+        if slug_or_market_id == "cpi-below-consensus":
+            market = self.browse_markets(MarketCatalogBrowseQuery(limit=10)).items[0]
+            related = [
+                self.browse_markets(MarketCatalogBrowseQuery(limit=10)).items[1],
+            ]
+            return MarketCatalogDetail(
+                market=market,
+                description_text="Official CPI release determines settlement.",
+                rules_text="Use the first official release only.",
+                important_notes=["Revisions are ignored."],
+                event_slug="macro-signals",
+                related_markets=related,
+                outcomes=[
+                    MarketCatalogOutcome(label="YES", token_id="asset_yes"),
+                    MarketCatalogOutcome(label="NO", token_id="asset_no"),
+                ],
+                polymarket_url="https://polymarket.com/event/macro-signals",
+                gamma_url="https://gamma-api.polymarket.com/markets?slug=cpi-below-consensus",
+            )
+        market = self.browse_markets(MarketCatalogBrowseQuery(limit=10)).items[1]
+        return MarketCatalogDetail(
+            market=market,
+            description_text="",
+            rules_text="",
+            important_notes=[],
+            event_slug="macro-signals",
+            related_markets=[],
+            outcomes=[MarketCatalogOutcome(label="YES", token_id=None), MarketCatalogOutcome(label="NO", token_id=None)],
+            polymarket_url="https://polymarket.com/event/macro-signals",
+            gamma_url="https://gamma-api.polymarket.com/markets?slug=payrolls-beat-estimates",
         )

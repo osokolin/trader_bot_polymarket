@@ -88,6 +88,15 @@ class GammaApiClient:
             raise PolymarketParseError("Unexpected Gamma markets response shape")
         return payload
 
+    def get_market_by_slug(self, slug: str) -> dict[str, object]:
+        payload = self._get_json("/markets", params={"slug": slug})
+        if not isinstance(payload, list) or not payload:
+            raise PolymarketParseError(f"No Gamma market payload returned for slug={slug}")
+        first = payload[0]
+        if not isinstance(first, dict):
+            raise PolymarketParseError("Unexpected Gamma market list item shape")
+        return first
+
     def get_event(self, event_id: str) -> dict[str, object]:
         payload = self._get_json("/events", params={"id": event_id})
         if isinstance(payload, list):

@@ -24,6 +24,7 @@ from bot.services.web_auth import (
     WebAuthError,
     WebAuthService,
 )
+from bot.adapters.polymarket.errors import PolymarketAdapterError
 from bot.ui.presenter import (
     badge,
     card_grid,
@@ -89,6 +90,7 @@ class OperatorDashboardApp:
         "state": "Состояние",
         "watchlist_only": "Только watchlist",
         "entity": "Сущность",
+        "event": "Событие",
         "alert_type": "Тип алерта",
         "summary": "Сводка",
         "reason": "Причина",
@@ -119,6 +121,7 @@ class OperatorDashboardApp:
         "size_fill_ratio": "Доля исполнения объема",
         "latency_delta_ms": "Отклонение задержки, мс",
         "actual_completion_reason": "Фактическая причина завершения",
+        "liquidity_usd": "Ликвидность, USD",
         "confidence_outcome": "Итог по уверенности",
         "probability_outcome": "Итог по вероятности",
         "execution_outcome": "Итог по исполнению",
@@ -229,6 +232,8 @@ class OperatorDashboardApp:
             return "200 OK", self._alert_action(path.split("/")[2], path.split("/")[3], query)
         if path == "/research":
             return "200 OK", self._research_index(query)
+        if path.startswith("/catalog/markets/"):
+            return "200 OK", self._market_detail(path.rsplit("/", 1)[1])
         if path == "/catalog/markets":
             return "200 OK", self._market_catalog(query)
         if path == "/catalog/events":
@@ -587,9 +592,10 @@ class OperatorDashboardApp:
         liquidity = "-" if item.liquidity_usd is None else f"${item.liquidity_usd:,.0f}"
         volume = "-" if item.volume_usd is None else f"${item.volume_usd:,.0f}"
         ending = "-" if item.end_time is None else item.end_time.isoformat()
+        detail_href = f"/catalog/markets/{item.slug or item.market_id}"
         return (
             '<article class="market-card">'
-            f"<h3>{escape(item.question)}</h3>"
+            f'<h3><a href="{escape(detail_href, quote=True)}">{escape(item.question)}</a></h3>'
             '<div class="market-meta-row">'
             f'{badge(item.category, "warn")} {badge("активен" if item.active and not item.closed else "закрыт", status_tone)} {badge("orderbook" if item.enable_order_book else "без orderbook", orderbook_tone)}'
             "</div>"
@@ -602,6 +608,7 @@ class OperatorDashboardApp:
             "</div>"
             + link_row(
                 [
+                    ("detail", detail_href),
                     ("live", f"/markets/live/{item.market_id}"),
                     ("research", f"/research/markets/{item.market_id}"),
                     ("decision review", f"/decision-reviews/markets/{item.market_id}"),
@@ -609,6 +616,139 @@ class OperatorDashboardApp:
             )
             + "</article>"
         )
+
+    def _market_detail(self, slug_or_market_id: str) -> str:
+        if self.services.market_catalog_service is None:
+            raise ValueError("Каталог рынков не настроен")
+        detail = self.services.market_catalog_service.get_market_detail(slug_or_market_id)
+        market = detail.market
+        snapshot = None
+        live_error = None
+        if self.services.market_data_service is not None:
+            try:
+                snapshot = self.services.market_data_service.inspect_snapshot(market.market_id, refresh=False)
+            except PolymarketAdapterError as exc:
+                live_error = str(exc)
+        body = hero("Карточка рынка", "Browse-only страница исследования для оператора перед дальнейшими действиями.")
+        body += panel(
+            market.question,
+            self._kv(
+                [
+                    ("market_id", market.market_id),
+                    ("market_title", market.question),
+                    ("market_category", market.category),
+                    ("status", "active" if market.active and not market.closed else "closed"),
+                    ("event", detail.market.event_title or detail.market.event_id or "-"),
+                    ("liquidity_usd", "-" if market.liquidity_usd is None else f"{market.liquidity_usd:,.0f}"),
+                    ("created_at", "-" if market.created_at is None else market.created_at.isoformat()),
+                    ("expires_at", "-" if market.end_time is None else market.end_time.isoformat()),
+                ]
+            )
+            + chips([market.slug or market.market_id], empty_message="нет slug")
+            + self._external_link_row(
+                [
+                    ("открыть на Polymarket", detail.polymarket_url),
+                    ("Gamma reference", detail.gamma_url),
+                ]
+            ),
+        )
+        body += panel(
+            "Исходы",
+            self._market_outcomes_block(detail.outcomes, snapshot, market.market_id, live_error),
+            meta="Показываем только надежные поля из Gamma/CLOB; ничего не допридумываем.",
+        )
+        body += panel(
+            "Правила",
+            self._market_rules_block(detail),
+        )
+        body += panel(
+            "Контекст рынка",
+            self._kv(
+                [
+                    ("event", detail.market.event_title or detail.market.event_id or "-"),
+                    ("market_category", detail.market.category),
+                    ("expires_at", "-" if detail.market.end_time is None else detail.market.end_time.isoformat()),
+                    ("status", "active" if detail.market.active and not detail.market.closed else "closed"),
+                ]
+            )
+            + (
+                "<h3>Связанные рынки в событии</h3>"
+                + card_grid([self._related_market_card(item) for item in detail.related_markets], "Других рынков в событии не найдено.")
+                if detail.related_markets
+                else '<div class="empty">Других рынков в событии не найдено.</div>'
+            ),
+        )
+        return page(f"Рынок {market.question}", body)
+
+    def _market_outcomes_block(self, outcomes: list, snapshot, market_id: str, live_error: str | None) -> str:
+        rows = []
+        for outcome in outcomes:
+            best_bid = "-"
+            best_ask = "-"
+            midpoint = "-"
+            implied = "-"
+            if snapshot is not None and outcome.token_id in {None, snapshot.asset_id}:
+                best_bid = f"{snapshot.orderbook.best_bid:.4f}"
+                best_ask = f"{snapshot.orderbook.best_ask:.4f}"
+                midpoint = f"{snapshot.orderbook.midpoint:.4f}"
+                implied = midpoint
+            rows.append(
+                '<article class="market-card">'
+                f"<h3>{escape(outcome.label)}</h3>"
+                '<div class="market-stats">'
+                f"<div><strong>best bid</strong><br>{escape(best_bid)}</div>"
+                f"<div><strong>best ask</strong><br>{escape(best_ask)}</div>"
+                f"<div><strong>midpoint</strong><br>{escape(midpoint)}</div>"
+                f"<div><strong>implied probability</strong><br>{escape(implied)}</div>"
+                "</div>"
+                + "</article>"
+            )
+        extra = ""
+        if snapshot is not None:
+            extra = link_row([("live snapshot", f"/markets/live/{market_id}")])
+        elif live_error is not None:
+            extra = f'<div class="empty">Live pricing сейчас недоступен: {escape(live_error)}</div>'
+        return card_grid(rows, "Outcome labels не найдены.") + extra
+
+    def _market_rules_block(self, detail) -> str:
+        sections = []
+        if detail.description_text:
+            sections.append(f"<h3>Описание</h3><div class=\"meta\">{escape(detail.description_text)}</div>")
+        if detail.rules_text:
+            sections.append(f"<h3>Критерии резолюции</h3><div class=\"meta\">{escape(detail.rules_text)}</div>")
+        if detail.important_notes:
+            sections.append(f"<h3>Важные примечания</h3>{chips(detail.important_notes, empty_message='нет заметок')}")
+        if not sections:
+            fallback = self._external_link_row([("открыть оригинальную страницу", detail.polymarket_url)])
+            return '<div class="empty">Правила в API не заполнены.</div>' + fallback
+        return "".join(sections)
+
+    def _related_market_card(self, item) -> str:
+        return (
+            '<article class="market-card">'
+            f'<h3><a href="/catalog/markets/{escape(item.slug or item.market_id, quote=True)}">{escape(item.question)}</a></h3>'
+            f'<div class="meta">{escape(item.event_title or item.event_id or "-")}</div>'
+            '<div class="market-meta-row">'
+            f'{badge(item.category, "warn")} {badge("orderbook" if item.enable_order_book else "без orderbook", "good" if item.enable_order_book else "bad")}'
+            "</div>"
+            + link_row(
+                [
+                    ("detail", f"/catalog/markets/{item.slug or item.market_id}"),
+                    ("live", f"/markets/live/{item.market_id}"),
+                ]
+            )
+            + "</article>"
+        )
+
+    def _external_link_row(self, links: list[tuple[str, str | None]]) -> str:
+        rendered = [
+            f'<a href="{escape(href, quote=True)}" target="_blank" rel="noopener noreferrer">{escape(label)}</a>'
+            for label, href in links
+            if href is not None
+        ]
+        if not rendered:
+            return ""
+        return '<div class="toolbar">' + " ".join(rendered) + "</div>"
 
     def _proposal_list(self, query: dict[str, list[str]]) -> str:
         scope = self._query_value(query, "scope", "all")
