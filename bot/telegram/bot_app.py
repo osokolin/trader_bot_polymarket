@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 
@@ -8,6 +9,8 @@ import httpx
 from bot.telegram import formatter
 from bot.telegram.router import TelegramRouter
 from bot.services.telegram_operator_service import TelegramOperatorService
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -93,7 +96,10 @@ class TelegramBotApp:
             text = formatter.notification_message(notification)
             reply_markup = formatter.notification_markup(notification)
             for chat_id in sorted(self.router.auth.allowed_chat_ids):
-                self.client.send_message_with_markup(chat_id, text, reply_markup)
+                try:
+                    self.client.send_message_with_markup(chat_id, text, reply_markup)
+                except Exception as exc:
+                    logger.warning("telegram notification delivery failed chat_id=%s error=%s", chat_id, exc)
         return next_offset
 
 
