@@ -117,6 +117,8 @@ market_opportunity_alerts:
     - ukraine
     - russia
     - trump
+    - putin
+    - biden
   # Relevant market threshold for high-liquidity alerts.
   liquidity_threshold: 50000
   # Alert when a relevant market is close to resolution.
