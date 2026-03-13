@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -41,6 +42,36 @@ def _normalize_category(value: str) -> str:
     return normalized or "unknown"
 
 
+def _first_present(payload: dict[str, object], *keys: str) -> object | None:
+    for key in keys:
+        if payload.get(key) not in (None, ""):
+            return payload.get(key)
+    return None
+
+
+@dataclass(slots=True)
+class MarketCatalogOutcome:
+    label: str
+    token_id: str | None
+    best_bid: float | None = None
+    best_ask: float | None = None
+    midpoint: float | None = None
+    implied_probability: float | None = None
+
+
+@dataclass(slots=True)
+class MarketCatalogDetail:
+    market: GammaMarketSummary
+    description_text: str
+    rules_text: str
+    important_notes: list[str]
+    event_slug: str | None
+    related_markets: list[GammaMarketSummary]
+    outcomes: list[MarketCatalogOutcome]
+    polymarket_url: str | None
+    gamma_url: str
+
+
 @dataclass(slots=True)
 class MarketCatalogBrowseQuery:
     scope: str = "active"
@@ -67,6 +98,36 @@ class MarketCatalogService:
     def list_markets(self, limit: int = 20, active: bool = True, closed: bool = False) -> list[GammaMarketSummary]:
         payloads = self.gamma_client.list_markets(limit=limit, active=active, closed=closed)
         return self._map_market_payloads(payloads)
+
+    def get_market_detail(self, slug_or_market_id: str) -> MarketCatalogDetail:
+        payload = self._get_market_payload(slug_or_market_id)
+        market = self._map_market_payloads([payload])[0]
+        description_text = str(_first_present(payload, "description", "rules", "rulesText") or "")
+        rules_text = str(_first_present(payload, "resolutionSource", "resolution_criteria", "resolutionCriteria", "notes") or "")
+        important_notes = [
+            str(value)
+            for value in [
+                _first_present(payload, "notes"),
+                _first_present(payload, "comment"),
+                _first_present(payload, "resolutionSource"),
+            ]
+            if value not in (None, "", description_text, rules_text)
+        ]
+        outcomes = self._extract_outcomes(payload)
+        event_slug, related_markets = self._related_markets(payload, market.market_id)
+        polymarket_url = self._polymarket_url(payload, event_slug)
+        gamma_url = f"{self.gamma_client.base_url}/markets?slug={market.slug or market.market_id}"
+        return MarketCatalogDetail(
+            market=market,
+            description_text=description_text,
+            rules_text=rules_text,
+            important_notes=important_notes,
+            event_slug=event_slug,
+            related_markets=related_markets[:5],
+            outcomes=outcomes,
+            polymarket_url=polymarket_url,
+            gamma_url=gamma_url,
+        )
 
     def browse_markets(self, query: MarketCatalogBrowseQuery) -> MarketCatalogBrowseResult:
         batch_limit = max(query.limit * 6, 120)
@@ -139,6 +200,12 @@ class MarketCatalogService:
             )
         return items
 
+    def _get_market_payload(self, slug_or_market_id: str) -> dict[str, object]:
+        try:
+            return self.gamma_client.get_market_by_slug(slug_or_market_id)
+        except PolymarketParseError:
+            return self.gamma_client.get_market(slug_or_market_id)
+
     def _map_market_payloads(self, payloads: list[dict[str, object]]) -> list[GammaMarketSummary]:
         items: list[GammaMarketSummary] = []
         for payload in payloads:
@@ -164,6 +231,71 @@ class MarketCatalogService:
                 )
             )
         return items
+
+    def _extract_outcomes(self, payload: dict[str, object]) -> list[MarketCatalogOutcome]:
+        outcomes: list[MarketCatalogOutcome] = []
+        tokens = payload.get("tokens")
+        if isinstance(tokens, list):
+            for token in tokens:
+                if not isinstance(token, dict):
+                    continue
+                label = str(_first_present(token, "outcome", "title", "name") or "Outcome")
+                token_id = _first_present(token, "token_id", "asset_id", "clobTokenId")
+                outcomes.append(
+                    MarketCatalogOutcome(
+                        label=label,
+                        token_id=None if token_id is None else str(token_id),
+                    )
+                )
+        raw_outcomes = payload.get("outcomes")
+        if isinstance(raw_outcomes, str):
+            stripped = raw_outcomes.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                try:
+                    parsed = json.loads(stripped)
+                except ValueError:
+                    parsed = []
+                if isinstance(parsed, list):
+                    for value in parsed:
+                        label = str(value)
+                        if not any(existing.label == label for existing in outcomes):
+                            outcomes.append(MarketCatalogOutcome(label=label, token_id=None))
+        elif isinstance(raw_outcomes, list):
+            for value in raw_outcomes:
+                label = str(value)
+                if not any(existing.label == label for existing in outcomes):
+                    outcomes.append(MarketCatalogOutcome(label=label, token_id=None))
+        return outcomes or [MarketCatalogOutcome(label="Outcome", token_id=None)]
+
+    def _related_markets(self, payload: dict[str, object], current_market_id: str) -> tuple[str | None, list[GammaMarketSummary]]:
+        event_payload = payload.get("event")
+        if isinstance(event_payload, dict):
+            event_slug = None if event_payload.get("slug") is None else str(event_payload.get("slug"))
+            markets = event_payload.get("markets")
+            if isinstance(markets, list):
+                related = [item for item in self._map_market_payloads([market for market in markets if isinstance(market, dict)]) if item.market_id != current_market_id]
+                return event_slug, related
+        event_id = payload.get("eventId")
+        if event_id is None:
+            return None, []
+        event = self.gamma_client.get_event(str(event_id))
+        event_slug = None if event.get("slug") is None else str(event.get("slug"))
+        markets = event.get("markets")
+        if not isinstance(markets, list):
+            return event_slug, []
+        related = [item for item in self._map_market_payloads([market for market in markets if isinstance(market, dict)]) if item.market_id != current_market_id]
+        return event_slug, related
+
+    def _polymarket_url(self, payload: dict[str, object], event_slug: str | None) -> str | None:
+        direct = _first_present(payload, "url", "marketUrl")
+        if direct is not None:
+            return str(direct)
+        if event_slug:
+            return f"https://polymarket.com/event/{event_slug}"
+        slug = payload.get("slug")
+        if slug is not None:
+            return f"https://polymarket.com/event/{slug}"
+        return None
 
     def _sort_key(self, sort: str):
         max_dt = datetime.max.replace(tzinfo=timezone.utc)

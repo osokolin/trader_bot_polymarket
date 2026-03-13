@@ -317,6 +317,7 @@ Catalog entry points:
 - CLI: `bot markets draft-opportunities [--min-edge N] [--min-liquidity N] [--limit N]`
 - UI: `/catalog/markets`
 - UI: `/catalog/events`
+- UI: `/catalog/markets/<slug>`
 
 Examples:
 - `bot markets catalog --scope active`
@@ -330,6 +331,7 @@ Web catalog notes:
 - supported web browse filters currently include category multi-select, active/closed/all scope, text search, min liquidity, orderbook-only, sort, and limit
 - supported sort modes from current market data are `liquidity_desc`, `volume_desc`, `ending_soon`, and `newest`
 - the operator can save the current catalog browse state as the default saved view and reload it later
+- clicking a market card opens a read-only detail page with market overview, rules, outcomes, related event markets, and external Polymarket/Gamma links
 
 `bot markets scan` is a read-only opportunity scan. It scans active markets, loads current cached-or-live market pricing, applies a deterministic scanner fair-value heuristic, computes `edge = fair_probability - market_price`, filters by absolute edge magnitude, and sorts the output by descending absolute edge then confidence.
 `bot markets draft-opportunities` stays read-only with respect to execution: it runs the scanner, skips markets that already have an active proposal, and creates safe draft proposals through the existing proposal lifecycle only. It does not approve proposals, create intents, or change execution behavior.
