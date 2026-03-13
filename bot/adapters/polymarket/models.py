@@ -18,6 +18,7 @@ class GammaMarketSummary:
     market_id: str
     question: str
     event_id: str | None
+    event_title: str | None
     slug: str | None
     category: str
     active: bool
@@ -26,6 +27,8 @@ class GammaMarketSummary:
     enable_order_book: bool
     liquidity_usd: float | None = None
     volume_usd: float | None = None
+    end_time: datetime | None = None
+    created_at: datetime | None = None
 
 
 @dataclass(slots=True)

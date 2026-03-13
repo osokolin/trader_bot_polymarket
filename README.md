@@ -158,6 +158,7 @@ Available UI areas:
 - alerts with acknowledge/dismiss/resolve actions
 - research and probability snapshots
 - live market data inspection
+- market catalog browsing with saved browse preferences
 - integrated decision review pages
 - outcome analysis
 - saved views
@@ -323,6 +324,12 @@ Examples:
 - `bot markets catalog --scope all`
 - `bot markets scan --min-edge 0.08 --limit 10`
 - `bot markets draft-opportunities --min-edge 0.08 --limit 5`
+
+Web catalog notes:
+- `/catalog/markets` is browse-only and does not alter policy scope, YAML config, or scanner behavior
+- supported web browse filters currently include category multi-select, active/closed/all scope, text search, min liquidity, orderbook-only, sort, and limit
+- supported sort modes from current market data are `liquidity_desc`, `volume_desc`, `ending_soon`, and `newest`
+- the operator can save the current catalog browse state as the default saved view and reload it later
 
 `bot markets scan` is a read-only opportunity scan. It scans active markets, loads current cached-or-live market pricing, applies a deterministic scanner fair-value heuristic, computes `edge = fair_probability - market_price`, filters by absolute edge magnitude, and sorts the output by descending absolute edge then confidence.
 `bot markets draft-opportunities` stays read-only with respect to execution: it runs the scanner, skips markets that already have an active proposal, and creates safe draft proposals through the existing proposal lifecycle only. It does not approve proposals, create intents, or change execution behavior.
