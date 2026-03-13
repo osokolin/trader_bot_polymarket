@@ -59,6 +59,23 @@ class _FakeGammaClient:
                 "endDate": "2026-03-14T00:00:00Z",
                 "createdAt": "2026-03-12T00:00:00Z",
             },
+            {
+                "id": "mkt_macro",
+                "question": "Will CPI cool next month?",
+                "eventId": "evt_macro",
+                "eventTitle": "Macro Signals",
+                "slug": "cpi-cools-next-month",
+                "category": "",
+                "event": {"category": "macro"},
+                "active": True,
+                "closed": False,
+                "archived": False,
+                "enableOrderBook": True,
+                "liquidityClob": 2500,
+                "volumeClob": 3300,
+                "endDate": "2026-03-18T00:00:00Z",
+                "createdAt": "2026-03-11T00:00:00Z",
+            },
         ]
         filtered = [
             item
@@ -125,23 +142,33 @@ class MarketCatalogServiceTest(unittest.TestCase):
                 min_liquidity=1000,
                 orderbook_only=True,
                 sort="volume_desc",
-                limit=10,
+                page_size=10,
             )
         )
         self.assertEqual([item.market_id for item in result.items], ["mkt_politics"])
-        self.assertEqual(result.available_categories, ["crypto", "Politics", "sports"])
+        self.assertEqual(result.available_categories, ["Crypto", "Macro", "Politics", "Sports"])
 
     def test_browse_markets_sorts_by_liquidity_desc_by_default(self) -> None:
-        result = self.service.browse_markets(MarketCatalogBrowseQuery(scope="active", limit=10))
-        self.assertEqual([item.market_id for item in result.items], ["mkt_crypto", "mkt_politics"])
+        result = self.service.browse_markets(MarketCatalogBrowseQuery(scope="active", page_size=10))
+        self.assertEqual([item.market_id for item in result.items], ["mkt_crypto", "mkt_politics", "mkt_macro"])
 
     def test_browse_markets_sorts_by_ending_soon(self) -> None:
-        result = self.service.browse_markets(MarketCatalogBrowseQuery(scope="all", sort="ending_soon", limit=10))
-        self.assertEqual([item.market_id for item in result.items], ["mkt_sports", "mkt_politics", "mkt_crypto"])
+        result = self.service.browse_markets(MarketCatalogBrowseQuery(scope="all", sort="ending_soon", page_size=10))
+        self.assertEqual([item.market_id for item in result.items], ["mkt_sports", "mkt_politics", "mkt_macro", "mkt_crypto"])
 
     def test_browse_markets_can_filter_closed_only(self) -> None:
-        result = self.service.browse_markets(MarketCatalogBrowseQuery(scope="closed", limit=10))
+        result = self.service.browse_markets(MarketCatalogBrowseQuery(scope="closed", page_size=10))
         self.assertEqual([item.market_id for item in result.items], ["mkt_sports"])
+
+    def test_browse_markets_resolves_missing_category_from_event_metadata(self) -> None:
+        result = self.service.browse_markets(MarketCatalogBrowseQuery(scope="active", categories=["macro"], page_size=20))
+        self.assertEqual([item.market_id for item in result.items], ["mkt_macro"])
+
+    def test_browse_markets_paginates_after_sorting(self) -> None:
+        result = self.service.browse_markets(MarketCatalogBrowseQuery(scope="active", page=2, page_size=1))
+        self.assertEqual(result.total_count, 3)
+        self.assertEqual(result.total_pages, 3)
+        self.assertEqual([item.market_id for item in result.items], ["mkt_politics"])
 
     def test_get_market_detail_includes_rules_outcomes_and_related_markets(self) -> None:
         detail = self.service.get_market_detail("btc-hit-120k")

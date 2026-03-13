@@ -54,7 +54,7 @@ class SavedViewService:
         },
         "markets_catalog": {
             "required": set(),
-            "optional": {"scope", "categories", "search", "min_liquidity", "orderbook_only", "sort", "limit"},
+            "optional": {"scope", "categories", "search", "min_liquidity", "orderbook_only", "sort", "limit", "page", "page_size"},
             "validators": {
                 "scope": lambda value: value in {"active", "closed", "all"},
                 "categories": lambda value: isinstance(value, list) and all(isinstance(item, str) for item in value),
@@ -63,6 +63,8 @@ class SavedViewService:
                 "orderbook_only": lambda value: isinstance(value, bool),
                 "sort": lambda value: value in {"liquidity_desc", "volume_desc", "ending_soon", "newest"},
                 "limit": lambda value: isinstance(value, int) and value > 0,
+                "page": lambda value: isinstance(value, int) and value > 0,
+                "page_size": lambda value: isinstance(value, int) and value > 0,
             },
         },
     }

@@ -133,6 +133,22 @@ def page(title: str, body: str) -> str:
       flex-wrap: wrap;
       align-items: center;
     }}
+    .field-help {{
+      font-weight: 400;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.35;
+    }}
+    .pagination {{
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }}
+    .pagination .meta {{
+      margin-right: auto;
+    }}
     .filter-grid {{
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -261,10 +277,14 @@ def post_action_row(actions: list[tuple[str, str, dict[str, object], str]]) -> s
         return ""
     forms: list[str] = []
     for label, href, fields, tone in actions:
-        hidden = "".join(
-            f'<input type="hidden" name="{escape(key, quote=True)}" value="{escape(str(value), quote=True)}">'
-            for key, value in fields.items()
-        )
+        hidden_parts: list[str] = []
+        for key, value in fields.items():
+            values = value if isinstance(value, list) else [value]
+            hidden_parts.extend(
+                f'<input type="hidden" name="{escape(key, quote=True)}" value="{escape(str(item), quote=True)}">'
+                for item in values
+            )
+        hidden = "".join(hidden_parts)
         forms.append(
             f'<form method="post" action="{escape(href, quote=True)}">{hidden}<button class="{escape(tone)}" type="submit">{escape(label)}</button></form>'
         )

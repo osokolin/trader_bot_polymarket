@@ -191,6 +191,45 @@ class WebAuthUiTest(unittest.TestCase):
             remember_result = fresh_client.get("/", cookies={WebAuthService.REMEMBER_COOKIE: remember_cookie})
             self.assertEqual(remember_result.status, "303 See Other")
 
+    def test_save_current_catalog_view_uses_post_and_preserves_multi_select_categories(self) -> None:
+        with self._fixture() as fixture:
+            fixture.client.post("/login", form_data={"username": "osokolin", "password": "Secret123!"})
+            csrf_token = fixture.current_csrf_token()
+
+            status, headers, body = fixture.app.render_http_response(
+                method="POST",
+                path="/views/save-current",
+                form_data={
+                    "name": "catalog-markets-default",
+                    "kind": "markets_catalog",
+                    "scope": "all",
+                    "sort": "volume_desc",
+                    "page_size": "20",
+                    "category": "politics",
+                    "csrf_token": csrf_token,
+                },
+                form_lists={
+                    "name": ["catalog-markets-default"],
+                    "kind": ["markets_catalog"],
+                    "scope": ["all"],
+                    "sort": ["volume_desc"],
+                    "page_size": ["20"],
+                    "category": ["crypto", "politics"],
+                    "csrf_token": [csrf_token],
+                },
+                cookies=dict(fixture.client.cookies),
+                remote_addr="127.0.0.1",
+                user_agent="test-agent",
+            )
+
+            self.assertEqual(status, "200 OK")
+            self.assertIn("Текущий фильтр сохранен", body)
+            saved = fixture.app.services.saved_view_service.get("catalog-markets-default")
+            self.assertIsNotNone(saved)
+            assert saved is not None
+            self.assertEqual(saved.params["categories"], ["crypto", "politics"])
+            self.assertEqual(saved.params["page_size"], 20)
+
     @dataclass(slots=True)
     class _Fixture:
         connection: object
