@@ -341,6 +341,8 @@ Web catalog notes:
 `bot alerts scan-opportunities` is the dedicated one-shot operator command for discovery alerts. It polls active markets, matches explicit tracked categories/keywords, checks high-liquidity and resolving-soon thresholds, looks for already-existing conservative system context, and creates deduplicated open alerts through the existing alert workflow. It does not create proposals or execution actions. Country-keyword matches are intentionally suppressed for clearly sports-like markets (for example FIFA/World Cup qualifying markets) to keep alert volume trustworthy.
 
 Telegram reuses the same service path via `/scan-opportunities [limit]` and returns a compact operator summary. A short in-memory cooldown prevents accidental re-trigger spam from the same runtime.
+
+When `bot telegram serve` is running, the same opportunity scan also runs automatically in the background on the configured `market_opportunity_alerts.poll_interval_seconds` cadence. The Telegram runtime only triggers the existing scan service; alert creation and Telegram delivery still flow through the existing alert pipeline.
 `bot markets draft-opportunities` stays read-only with respect to execution: it runs the scanner, skips markets that already have an active proposal, and creates safe draft proposals through the existing proposal lifecycle only. It does not approve proposals, create intents, or change execution behavior.
 
 Approval revalidation now fails closed if public market data is stale, malformed, or unavailable.

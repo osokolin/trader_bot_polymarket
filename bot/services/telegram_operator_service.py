@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 from time import monotonic
 
 from bot.config.models import Settings
@@ -15,6 +16,8 @@ from bot.services.polymarket_diagnostics import PolymarketDiagnosticsResult, Pol
 from bot.services.proposal_lifecycle import ProposalLifecycleError, ProposalLifecycleService
 from bot.services.runtime_safety import build_runtime_safety_snapshot
 from bot.services.operator_notifications import OperatorNotificationsService
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -53,8 +56,11 @@ class TelegramOperatorService:
     _last_diagnostics_failure: str | None = None
     _last_diagnostics_check_monotonic: float = 0.0
     _last_opportunity_scan_monotonic: float = 0.0
+    _last_background_opportunity_scan_monotonic: float = 0.0
+    _background_opportunity_scan_in_progress: bool = False
     diagnostics_poll_interval_seconds: float = 300.0
     opportunity_scan_cooldown_seconds: float = 60.0
+    background_opportunity_scan_interval_seconds: float | None = None
     opportunity_alert_types: tuple[AlertType, ...] = (
         AlertType.NEW_RELEVANT_MARKET,
         AlertType.HIGH_LIQUIDITY_MARKET,
@@ -214,11 +220,12 @@ class TelegramOperatorService:
         return self.notifications_service.list_alerts(state=AlertState.OPEN)[:limit]
 
     def poll_notifications(self) -> list[TelegramNotification]:
-        active_proposals = self.proposal_service.list_active_proposals()
-        open_alerts = self.notifications_service.list_alerts(state=AlertState.OPEN)
+        primed_this_cycle = False
         diagnostics = None
         if self._should_run_diagnostics_check():
             diagnostics = self.diagnostics_service.run()
+        active_proposals = self.proposal_service.list_active_proposals()
+        open_alerts = self.notifications_service.list_alerts(state=AlertState.OPEN)
 
         if not self._primed:
             self._seen_proposal_ids.update(item.proposal_id for item in active_proposals)
@@ -226,7 +233,10 @@ class TelegramOperatorService:
             if diagnostics is not None:
                 self._last_diagnostics_failure = self._diagnostics_signature(diagnostics)
             self._primed = True
-            return []
+            primed_this_cycle = True
+        self._run_background_opportunity_scan_if_due()
+        active_proposals = self.proposal_service.list_active_proposals()
+        open_alerts = self.notifications_service.list_alerts(state=AlertState.OPEN)
 
         notifications: list[TelegramNotification] = []
         for proposal in active_proposals:
@@ -244,13 +254,45 @@ class TelegramOperatorService:
                     notifications.append(TelegramNotification("inbox_request", request))
                 self._seen_alert_ids.add(alert.alert_id)
 
-        if diagnostics is not None:
+        if diagnostics is not None and not primed_this_cycle:
             current_requests = self.decision_inbox_service.create_diagnostics_requests(diagnostics, source="telegram_poll")
             diagnostics_signature = self._diagnostics_signature(diagnostics)
             if diagnostics_signature is not None and diagnostics_signature != self._last_diagnostics_failure:
                 notifications.extend(TelegramNotification("inbox_request", item) for item in current_requests)
             self._last_diagnostics_failure = diagnostics_signature
         return notifications
+
+    def _run_background_opportunity_scan_if_due(self) -> None:
+        if self.market_opportunity_alert_service is None:
+            return
+        if self._background_opportunity_scan_in_progress:
+            return
+        now = monotonic()
+        interval = self._background_scan_interval_seconds()
+        if interval < 0:
+            return
+        if now - self._last_background_opportunity_scan_monotonic < interval:
+            return
+        self._background_opportunity_scan_in_progress = True
+        self._last_background_opportunity_scan_monotonic = now
+        try:
+            result = self.market_opportunity_alert_service.scan(self.settings)
+            logger.info(
+                "background opportunity scan complete scanned=%s relevant=%s created=%s warnings=%s",
+                result.scanned_count,
+                result.relevant_count,
+                len(result.created_alerts),
+                len(result.warning_messages),
+            )
+        except Exception as exc:
+            logger.warning("background opportunity scan failed error=%s", exc)
+        finally:
+            self._background_opportunity_scan_in_progress = False
+
+    def _background_scan_interval_seconds(self) -> float:
+        if self.background_opportunity_scan_interval_seconds is not None:
+            return self.background_opportunity_scan_interval_seconds
+        return float(self.settings.market_opportunity_alerts.poll_interval_seconds)
 
     def _diagnostics_signature(self, diagnostics: PolymarketDiagnosticsResult) -> str | None:
         if diagnostics.overall_ok:

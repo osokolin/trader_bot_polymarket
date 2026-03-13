@@ -741,6 +741,40 @@ class TelegramOperatorTest(unittest.TestCase):
 
 
 class TelegramOperatorIntegrationTest(unittest.TestCase):
+    class _BackgroundOpportunityAlerts:
+        def __init__(self, notifications_service: OperatorNotificationsService, market_id: str) -> None:
+            self.notifications_service = notifications_service
+            self.market_id = market_id
+            self.calls = 0
+            self.raise_error = False
+            self.create_on_scan = True
+
+        def scan(self, settings, limit: int = 200):
+            self.calls += 1
+            if self.raise_error:
+                raise RuntimeError("scan failed")
+            created_alerts = []
+            if self.create_on_scan:
+                alert = self.notifications_service.create_market_opportunity_alert(
+                    alert_type=AlertType.NEW_RELEVANT_MARKET,
+                    market_id=self.market_id,
+                    severity=AlertSeverity.INFO,
+                    summary="New relevant market: test",
+                    payload={"why": "category=crypto"},
+                )
+                if alert is not None:
+                    created_alerts.append(alert)
+            return type(
+                "Result",
+                (),
+                {
+                    "created_alerts": created_alerts,
+                    "scanned_count": 10,
+                    "relevant_count": 1,
+                    "warning_messages": [],
+                },
+            )()
+
     class _FakeSnapshotProvider:
         def __init__(self, market: Market, probability: ProbabilityEstimate, current_price: float) -> None:
             self.market = market
@@ -858,6 +892,7 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
             )(),
             diagnostics_service=self._FakeDiagnosticsService(),
         )
+        self.operator_service.background_opportunity_scan_interval_seconds = 300.0
 
     def _create_proposal(self) -> TradeProposal:
         context = self.proposal_service.proposal_engine.create_default_context(self.market, self.probability, current_price=0.49)
@@ -961,6 +996,7 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
         self.assertEqual(audits[0]["event_type"], "telegram_opportunity_scan")
         with self.assertRaisesRegex(RuntimeError, "cooling down"):
             self.operator_service.scan_opportunities(chat_id=777, limit=150)
+
     def test_new_opportunity_alert_is_delivered_once_via_poll_notifications(self) -> None:
         self.operator_service.poll_notifications()
         alert = self.notifications_service.create_market_opportunity_alert(
@@ -981,6 +1017,49 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
         inbox = self.operator_service.list_inbox()
         self.assertEqual(len(inbox), 1)
         self.assertEqual(inbox[0].entity_id, alert.alert_id)
+
+    def test_background_opportunity_scan_runs_when_interval_elapsed_and_alert_flows_to_notifications(self) -> None:
+        background_service = self._BackgroundOpportunityAlerts(self.notifications_service, self.market.market_id)
+        self.operator_service.market_opportunity_alert_service = background_service
+        self.operator_service.background_opportunity_scan_interval_seconds = 0.0
+
+        notifications = self.operator_service.poll_notifications()
+
+        self.assertEqual(background_service.calls, 1)
+        self.assertEqual([item.kind for item in notifications], ["alert"])
+        self.assertEqual(notifications[0].payload.related_market_id, self.market.market_id)
+
+    def test_background_opportunity_scan_does_not_run_before_interval(self) -> None:
+        background_service = self._BackgroundOpportunityAlerts(self.notifications_service, self.market.market_id)
+        self.operator_service.market_opportunity_alert_service = background_service
+        self.operator_service.background_opportunity_scan_interval_seconds = 3600.0
+
+        self.operator_service.poll_notifications()
+        self.operator_service.poll_notifications()
+
+        self.assertEqual(background_service.calls, 1)
+
+    def test_background_opportunity_scan_failure_does_not_crash_notification_loop(self) -> None:
+        background_service = self._BackgroundOpportunityAlerts(self.notifications_service, self.market.market_id)
+        background_service.raise_error = True
+        self.operator_service.market_opportunity_alert_service = background_service
+        self.operator_service.background_opportunity_scan_interval_seconds = 0.0
+
+        notifications = self.operator_service.poll_notifications()
+
+        self.assertEqual(notifications, [])
+        self.assertEqual(background_service.calls, 1)
+
+    def test_background_opportunity_scan_overlap_guard_skips_when_in_progress(self) -> None:
+        background_service = self._BackgroundOpportunityAlerts(self.notifications_service, self.market.market_id)
+        self.operator_service.market_opportunity_alert_service = background_service
+        self.operator_service.background_opportunity_scan_interval_seconds = 0.0
+        self.operator_service._background_opportunity_scan_in_progress = True
+
+        notifications = self.operator_service.poll_notifications()
+
+        self.assertEqual(background_service.calls, 0)
+        self.assertEqual(notifications, [])
 
 if __name__ == "__main__":
     unittest.main()
