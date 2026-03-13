@@ -470,7 +470,8 @@ class OperatorDashboardApp:
         )
         body += panel(
             f"Рынки ({browse_result.total_count})",
-            card_grid(
+            pagination
+            + card_grid(
                 [self._market_catalog_card(item) for item in browse_result.items],
                 "По текущим browse-фильтрам рынки не найдены.",
             )
@@ -571,6 +572,7 @@ class OperatorDashboardApp:
 
     def _market_catalog_filter_form(self, result: MarketCatalogBrowseResult) -> str:
         query = result.applied_query
+        category_summary = self._market_catalog_category_summary(query.categories)
         category_options = "".join(
             f'<label><input type="checkbox" name="category" value="{escape(category, quote=True)}"'
             + (' checked' if category in query.categories else "")
@@ -605,15 +607,17 @@ class OperatorDashboardApp:
         return (
             '<form method="get" action="/catalog/markets">'
             '<div class="filter-grid">'
-            '<label class="field">Область<div class="field-help">Что смотреть в каталоге: активные рынки, закрытые или все.</div><select name="scope">'
+            '<label class="field"><span class="field-label">Область'
+            '<span class="help-tip" tabindex="0" aria-label="Подсказка по области" data-help="Что смотреть в каталоге: активные рынки, закрытые или все.">?</span>'
+            '</span><select name="scope">'
             + scope_options
             + '</select></label>'
-            f'<label class="field">Поиск<div class="field-help">Ищем по question, slug, event title и stable market id.</div><input type="text" name="search" value="{escape(query.search, quote=True)}" placeholder="question, slug, event"></label>'
-            f'<label class="field">Мин. ликвидность<div class="field-help">Отсекает слишком тонкие рынки по надежному полю liquidity.</div><input type="text" name="min_liquidity" value="{escape(min_liquidity, quote=True)}" placeholder="10000"></label>'
-            f'<label class="field">Сортировка<div class="field-help">Доступны только сортировки, которые реально поддерживаются текущими данными Gamma.</div><select name="sort">{sort_options}</select></label>'
-            f'<label class="field">Размер страницы<div class="field-help">Сколько карточек показывать на одной странице каталога.</div><select name="page_size">{page_size_options}</select></label>'
-            f'<label class="field">Опции<div class="field-help">Показывать только рынки с включенным orderbook.</div><div class="checkbox-list"><label><input type="checkbox" name="orderbook_only" value="true"{checked}> только orderbook</label></div></label>'
-            f'<label class="field">Категории<div class="field-help">Browse-only multi-select. Категории берутся из upstream metadata и консервативно нормализуются.</div><div class="checkbox-list">{category_options}</div></label>'
+            f'<label class="field"><span class="field-label">Поиск<span class="help-tip" tabindex="0" aria-label="Подсказка по поиску" data-help="Ищем по question, slug, event title и stable market id.">?</span></span><input type="text" name="search" value="{escape(query.search, quote=True)}" placeholder="question, slug, event"></label>'
+            f'<label class="field"><span class="field-label">Мин. ликвидность<span class="help-tip" tabindex="0" aria-label="Подсказка по ликвидности" data-help="Отсекает слишком тонкие рынки по надежному полю liquidity.">?</span></span><input type="text" name="min_liquidity" value="{escape(min_liquidity, quote=True)}" placeholder="10000"></label>'
+            f'<label class="field"><span class="field-label">Сортировка<span class="help-tip" tabindex="0" aria-label="Подсказка по сортировке" data-help="Доступны только сортировки, которые реально поддерживаются текущими данными Gamma.">?</span></span><select name="sort">{sort_options}</select></label>'
+            f'<label class="field"><span class="field-label">Размер страницы<span class="help-tip" tabindex="0" aria-label="Подсказка по размеру страницы" data-help="Сколько карточек показывать на одной странице каталога.">?</span></span><select name="page_size">{page_size_options}</select></label>'
+            f'<label class="field"><span class="field-label">Опции<span class="help-tip" tabindex="0" aria-label="Подсказка по опциям" data-help="Показывать только рынки с включенным orderbook.">?</span></span><div class="checkbox-list"><label><input type="checkbox" name="orderbook_only" value="true"{checked}> только orderbook</label></div></label>'
+            f'<label class="field"><span class="field-label">Категории<span class="help-tip" tabindex="0" aria-label="Подсказка по категориям" data-help="Browse-only multi-select. Категории берутся из upstream metadata и консервативно нормализуются.">?</span></span><div class="compact-multiselect"><details><summary>{escape(category_summary)}</summary><div class="checkbox-list">{category_options}</div></details></div></label>'
             "</div>"
             '<div class="form-actions"><button type="submit">Применить</button><a href="/catalog/markets?reset=1">Сбросить</a></div>'
             "</form>"
@@ -654,6 +658,15 @@ class OperatorDashboardApp:
         if query.categories:
             fields["category"] = query.categories
         return fields
+
+    def _market_catalog_category_summary(self, categories: list[str]) -> str:
+        if not categories:
+            return "Все категории"
+        if len(categories) <= 2:
+            return ", ".join(categories)
+        if len(categories) <= 4:
+            return f"Выбрано: {len(categories)}"
+        return f"Категорий выбрано: {len(categories)}"
 
     def _market_catalog_card(self, item) -> str:
         status_tone = "good" if item.active and not item.closed else "warn"

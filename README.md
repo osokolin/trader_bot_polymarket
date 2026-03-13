@@ -329,6 +329,7 @@ Examples:
 Web catalog notes:
 - `/catalog/markets` is browse-only and does not alter policy scope, YAML config, or scanner behavior
 - supported web browse filters currently include category multi-select, active/closed/all scope, text search, min liquidity, orderbook-only, sort, page size, and page-based navigation
+- catalog filter help is shown via lightweight tooltip icons, and categories now use a compact multi-select dropdown instead of a permanently open checkbox block
 - supported sort modes from current market data are `liquidity_desc`, `volume_desc`, `ending_soon`, and `newest`
 - the operator can save the current catalog browse state as the default saved view and reload it later
 - clicking a market card opens a read-only detail page with market overview, rules, outcomes, related event markets, external Polymarket/Gamma links, persisted research/operator context, and proposal history for that market when available
