@@ -107,3 +107,24 @@ safety:
   # Pause on unexpected position state.
   pause_on_unexpected_position_state: true
 
+market_opportunity_alerts:
+  # Browse/discovery-only alert rules for new relevant markets.
+  tracked_categories:
+    - politics
+    - crypto
+  tracked_keywords:
+    - iran
+    - ukraine
+    - russia
+  # Relevant market threshold for high-liquidity alerts.
+  liquidity_threshold: 50000
+  # Alert when a relevant market is close to resolution.
+  resolving_soon_days: 7
+  # Suggested polling interval for runtime integration.
+  poll_interval_seconds: 300
+  # Conservative discovery alerts enabled by default.
+  enabled_alert_types:
+    - new_relevant_market
+    - high_liquidity_market
+    - resolving_soon_market
+    - potential_context_market

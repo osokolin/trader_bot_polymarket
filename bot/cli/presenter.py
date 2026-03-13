@@ -403,6 +403,24 @@ def alert_lines(alerts) -> list[str]:
     return lines
 
 
+def market_opportunity_alert_lines(result) -> list[str]:
+    lines = [
+        "Market opportunity alert scan",
+        f"scanned_count: {result.scanned_count}",
+        f"relevant_count: {result.relevant_count}",
+        f"created_alert_count: {len(result.created_alerts)}",
+    ]
+    for warning in result.warning_messages:
+        lines.append(f"warning: {warning}")
+    for alert in result.created_alerts:
+        lines.append(
+            f"{alert.created_at.isoformat()} | alert | id={alert.alert_id} | severity={alert.severity.value} | "
+            f"state={alert.state.value} | type={alert.alert_type.value} | entity={alert.entity_type.value}:{alert.entity_id} | "
+            f"summary={alert.summary}"
+        )
+    return lines
+
+
 def saved_view_lines(saved_views) -> list[str]:
     lines = [f"saved_view_count: {len(saved_views)}"]
     for saved_view in saved_views:

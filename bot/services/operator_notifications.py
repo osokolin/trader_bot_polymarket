@@ -139,6 +139,38 @@ class OperatorNotificationsService:
             payload={"execution_id": execution_id, "status": status},
         )
 
+    def create_market_opportunity_alert(
+        self,
+        *,
+        alert_type: AlertType,
+        market_id: str,
+        summary: str,
+        payload: dict[str, object],
+        severity: AlertSeverity = AlertSeverity.INFO,
+    ) -> OperatorAlert | None:
+        existing = self.alert_repository.find_any_by_type_and_entity(
+            alert_type,
+            WatchTargetType.MARKET,
+            market_id,
+        )
+        if existing is not None:
+            return None
+        alert = OperatorAlert(
+            alert_id=new_id("alert"),
+            alert_type=alert_type,
+            severity=severity,
+            state=AlertState.OPEN,
+            entity_type=WatchTargetType.MARKET,
+            entity_id=market_id,
+            related_market_id=market_id,
+            related_proposal_id=None,
+            summary=summary,
+            payload=payload,
+            created_at=utc_now(),
+        )
+        self.alert_repository.save(alert)
+        return alert
+
     def _create_alert(
         self,
         alert_type: AlertType,

@@ -14,6 +14,7 @@ from bot.config.models import (
     EntryRulesConfig,
     ExitRulesConfig,
     MarketFiltersConfig,
+    MarketOpportunityAlertsConfig,
     PositionLimitsConfig,
     SafetyConfig,
     Settings,
@@ -128,6 +129,15 @@ def _validate_settings(settings: Settings) -> None:
     if settings.ai_policy.ai_can_place_orders and settings.approvals.auto_execute_disabled:
         raise ConfigError("ai_policy.ai_can_place_orders cannot be true while auto execution is disabled")
 
+    _ensure_non_negative(
+        "market_opportunity_alerts.liquidity_threshold",
+        settings.market_opportunity_alerts.liquidity_threshold,
+    )
+    if settings.market_opportunity_alerts.resolving_soon_days < 1:
+        raise ConfigError("market_opportunity_alerts.resolving_soon_days must be >= 1")
+    if settings.market_opportunity_alerts.poll_interval_seconds < 1:
+        raise ConfigError("market_opportunity_alerts.poll_interval_seconds must be >= 1")
+
 
 def _to_settings(
     data: dict[str, Any],
@@ -155,6 +165,7 @@ def _to_settings(
         sources=SourcesConfig(**sources),
         whitelist=WhitelistConfig(**whitelist),
         blacklist=BlacklistConfig(**blacklist),
+        market_opportunity_alerts=MarketOpportunityAlertsConfig(**_require(data, "market_opportunity_alerts")),
     )
     _validate_settings(settings)
     return settings

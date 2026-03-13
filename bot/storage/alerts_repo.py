@@ -171,6 +171,25 @@ class AlertRepository:
         ).fetchone()
         return None if row is None else self._row_to_alert(row)
 
+    def find_any_by_type_and_entity(
+        self,
+        alert_type: AlertType,
+        entity_type: WatchTargetType,
+        entity_id: str,
+    ) -> OperatorAlert | None:
+        row = self.connection.execute(
+            """
+            SELECT alert_id, alert_type, severity, state, entity_type, entity_id, related_market_id,
+                   related_proposal_id, summary, payload_json, created_at, acknowledged_at, dismissed_at, resolved_at
+            FROM operator_alerts
+            WHERE alert_type = ? AND entity_type = ? AND entity_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (alert_type.value, entity_type.value, entity_id),
+        ).fetchone()
+        return None if row is None else self._row_to_alert(row)
+
     def exists_recent(
         self,
         alert_type: AlertType,
