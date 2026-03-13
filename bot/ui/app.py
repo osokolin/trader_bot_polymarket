@@ -11,7 +11,7 @@ from bot.domain.models import DecisionReviewSnapshot, SavedView
 from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService
-from bot.services.market_catalog import MarketCatalogService
+from bot.services.market_catalog import MarketCatalogBrowseQuery, MarketCatalogBrowseResult, MarketCatalogService
 from bot.services.market_sync import LiveMarketDataService
 from bot.services.operator_notifications import OperatorNotificationsService
 from bot.services.outcome_analysis import OutcomeAnalysisService
@@ -26,6 +26,7 @@ from bot.services.web_auth import (
 )
 from bot.ui.presenter import (
     badge,
+    card_grid,
     chips,
     flash_message,
     hero,
@@ -57,6 +58,8 @@ class OperatorDashboardServices:
 
 
 class OperatorDashboardApp:
+    CATALOG_FILTER_KEYS = {"scope", "category", "search", "min_liquidity", "orderbook_only", "sort", "limit"}
+    CATALOG_DEFAULT_VIEW = "catalog-markets-default"
     FIELD_LABELS = {
         "scope": "Область",
         "market_id": "ID рынка",
@@ -106,6 +109,12 @@ class OperatorDashboardApp:
         "since_hours": "Окно, часов",
         "kind": "Тип",
         "params": "Параметры",
+        "active_count": "Активных на странице",
+        "closed_count": "Закрытых на странице",
+        "search": "Поиск",
+        "min_liquidity": "Мин. ликвидность",
+        "orderbook_only": "Только orderbook",
+        "sort": "Сортировка",
         "price_delta": "Отклонение цены",
         "size_fill_ratio": "Доля исполнения объема",
         "latency_delta_ms": "Отклонение задержки, мс",
@@ -407,41 +416,43 @@ class OperatorDashboardApp:
     def _market_catalog(self, query: dict[str, list[str]]) -> str:
         if self.services.market_catalog_service is None:
             raise ValueError("Каталог рынков не настроен")
-        limit = int(self._query_value(query, "limit", "20"))
-        active = self._query_value(query, "active", "1") not in {"0", "false", "no"}
-        items = self.services.market_catalog_service.list_markets(limit=limit, active=active, closed=not active)
+        effective_query = self._resolved_market_catalog_query(query)
+        browse_query = self._parse_market_catalog_query(effective_query)
+        browse_result = self.services.market_catalog_service.browse_markets(browse_query)
+        save_query = self._market_catalog_query_string(browse_result.applied_query)
+        saved_default = self.services.saved_view_service.get(self.CATALOG_DEFAULT_VIEW)
+        active_count = len([item for item in browse_result.items if item.active and not item.closed])
+        closed_count = len([item for item in browse_result.items if item.closed])
         body = hero("Каталог рынков", "Публичный список рынков Polymarket через Gamma API.")
         body += panel(
             "Фильтры",
-            link_row(
+            self._market_catalog_filter_form(browse_result)
+            + self._kv(
                 [
-                    ("активные", "/catalog/markets?active=1&limit=20"),
-                    ("закрытые", "/catalog/markets?active=0&limit=20"),
-                    ("50 рынков", f"/catalog/markets?active={'1' if active else '0'}&limit=50"),
+                    ("scope", browse_result.applied_query.scope),
+                    ("returned", len(browse_result.items)),
+                    ("active_count", active_count),
+                    ("closed_count", closed_count),
                 ]
+            )
+            + link_row(
+                [("сбросить фильтры", "/catalog/markets?reset=1")]
+                + [
+                    (
+                        "обновить сохраненный вид" if saved_default is not None else "сохранить текущий вид",
+                        f"/views/save-current?name={self.CATALOG_DEFAULT_VIEW}&kind=markets_catalog&{save_query}",
+                    )
+                ]
+                + ([("открыть сохраненный вид", f"/views/{self.CATALOG_DEFAULT_VIEW}")] if saved_default is not None else [])
             ),
         )
         body += panel(
-            f"Рынки ({len(items)})",
-            list_items(
-                [
-                    item_link(
-                        item.question,
-                        f"id={item.market_id} | category={item.category} | liquidity={item.liquidity_usd if item.liquidity_usd is not None else '-'}",
-                        f"/markets/live/{item.market_id}",
-                        meta=f"event={item.event_id or '-'} | orderbook={'yes' if item.enable_order_book else 'no'} | slug={item.slug or '-'}",
-                    )
-                    + link_row(
-                        [
-                            ("live", f"/markets/live/{item.market_id}"),
-                            ("research", f"/research/markets/{item.market_id}"),
-                            ("decision review", f"/decision-reviews/markets/{item.market_id}"),
-                        ]
-                    )
-                    for item in items
-                ],
-                "Нет рынков.",
+            f"Рынки ({len(browse_result.items)})",
+            card_grid(
+                [self._market_catalog_card(item) for item in browse_result.items],
+                "По текущим browse-фильтрам рынки не найдены.",
             ),
+            meta="Browse-only фильтры не меняют policy scope или scanner/pipeline настройки.",
         )
         return page("Каталог рынков", body)
 
@@ -478,6 +489,126 @@ class OperatorDashboardApp:
             ),
         )
         return page("Каталог событий", body)
+
+    def _resolved_market_catalog_query(self, query: dict[str, list[str]]) -> dict[str, list[str]]:
+        if self._query_value(query, "reset") in {"1", "true", "yes"}:
+            return {}
+        if any(key in query for key in self.CATALOG_FILTER_KEYS):
+            return query
+        saved = self.services.saved_view_service.get(self.CATALOG_DEFAULT_VIEW)
+        if saved is not None and saved.kind == "markets_catalog":
+            return self._params_query(saved, "scope", "active", "sort", "liquidity_desc", "limit", "20")
+        return query
+
+    def _parse_market_catalog_query(self, query: dict[str, list[str]]) -> MarketCatalogBrowseQuery:
+        legacy_active = self._query_value(query, "active")
+        default_scope = "closed" if legacy_active in {"0", "false", "no"} else "active"
+        scope = self._query_value(query, "scope", default_scope) or default_scope
+        if scope not in {"active", "closed", "all"}:
+            scope = "active"
+        sort = self._query_value(query, "sort", "liquidity_desc") or "liquidity_desc"
+        if sort not in {"liquidity_desc", "volume_desc", "ending_soon", "newest"}:
+            sort = "liquidity_desc"
+        limit = self._query_int(query, "limit") or 20
+        if limit <= 0:
+            limit = 20
+        categories = [value for value in query.get("category", []) if value.strip()]
+        return MarketCatalogBrowseQuery(
+            scope=scope,
+            categories=categories,
+            search=self._query_value(query, "search", "") or "",
+            min_liquidity=self._query_float(query, "min_liquidity"),
+            orderbook_only=self._query_value(query, "orderbook_only", "false") in {"1", "true", "yes"},
+            sort=sort,
+            limit=limit,
+        )
+
+    def _market_catalog_query_string(self, query: MarketCatalogBrowseQuery) -> str:
+        params: list[tuple[str, str]] = [("scope", query.scope), ("sort", query.sort), ("limit", str(query.limit))]
+        if query.search:
+            params.append(("search", query.search))
+        if query.min_liquidity is not None:
+            params.append(("min_liquidity", str(int(query.min_liquidity) if query.min_liquidity.is_integer() else query.min_liquidity)))
+        if query.orderbook_only:
+            params.append(("orderbook_only", "true"))
+        for category in query.categories:
+            params.append(("category", category))
+        return urlencode(params, doseq=True)
+
+    def _market_catalog_filter_form(self, result: MarketCatalogBrowseResult) -> str:
+        query = result.applied_query
+        category_options = "".join(
+            f'<label><input type="checkbox" name="category" value="{escape(category, quote=True)}"'
+            + (' checked' if category in query.categories else "")
+            + f"> {escape(category)}</label>"
+            for category in result.available_categories
+        )
+        if not category_options:
+            category_options = '<div class="empty">Категории в текущем наборе данных не обнаружены.</div>'
+        checked = ' checked' if query.orderbook_only else ""
+        sort_options = "".join(
+            f'<option value="{escape(value, quote=True)}"'
+            + (' selected' if value == query.sort else "")
+            + f">{escape(label)}</option>"
+            for value, label in [
+                ("liquidity_desc", "ликвидность ↓"),
+                ("volume_desc", "объем ↓"),
+                ("ending_soon", "завершение скоро"),
+                ("newest", "новые сначала"),
+            ]
+        )
+        scope_options = "".join(
+            f'<option value="{escape(value, quote=True)}"'
+            + (' selected' if value == query.scope else "")
+            + f">{escape(label)}</option>"
+            for value, label in [("active", "активные"), ("closed", "закрытые"), ("all", "все")]
+        )
+        min_liquidity = "" if query.min_liquidity is None else str(int(query.min_liquidity) if query.min_liquidity.is_integer() else query.min_liquidity)
+        return (
+            '<form method="get" action="/catalog/markets">'
+            '<div class="filter-grid">'
+            '<label class="field">Область<select name="scope">'
+            + scope_options
+            + '</select></label>'
+            f'<label class="field">Поиск<input type="text" name="search" value="{escape(query.search, quote=True)}" placeholder="question, slug, event"></label>'
+            f'<label class="field">Мин. ликвидность<input type="text" name="min_liquidity" value="{escape(min_liquidity, quote=True)}" placeholder="10000"></label>'
+            f'<label class="field">Сортировка<select name="sort">{sort_options}</select></label>'
+            f'<label class="field">Лимит<input type="text" name="limit" value="{escape(str(query.limit), quote=True)}"></label>'
+            f'<label class="field">Опции<div class="checkbox-list"><label><input type="checkbox" name="orderbook_only" value="true"{checked}> только orderbook</label></div></label>'
+            f'<label class="field">Категории<div class="checkbox-list">{category_options}</div></label>'
+            "</div>"
+            '<div class="form-actions"><button type="submit">Применить</button><a href="/catalog/markets?reset=1">Сбросить</a></div>'
+            "</form>"
+        )
+
+    def _market_catalog_card(self, item) -> str:
+        status_tone = "good" if item.active and not item.closed else "warn"
+        orderbook_tone = "good" if item.enable_order_book else "bad"
+        liquidity = "-" if item.liquidity_usd is None else f"${item.liquidity_usd:,.0f}"
+        volume = "-" if item.volume_usd is None else f"${item.volume_usd:,.0f}"
+        ending = "-" if item.end_time is None else item.end_time.isoformat()
+        return (
+            '<article class="market-card">'
+            f"<h3>{escape(item.question)}</h3>"
+            '<div class="market-meta-row">'
+            f'{badge(item.category, "warn")} {badge("активен" if item.active and not item.closed else "закрыт", status_tone)} {badge("orderbook" if item.enable_order_book else "без orderbook", orderbook_tone)}'
+            "</div>"
+            f'<div class="meta">event: {escape(item.event_title or item.event_id or "-")}</div>'
+            '<div class="market-stats">'
+            f"<div><strong>Ликвидность</strong><br>{escape(liquidity)}</div>"
+            f"<div><strong>Объем</strong><br>{escape(volume)}</div>"
+            f"<div><strong>Slug</strong><br>{escape(item.slug or item.market_id)}</div>"
+            f"<div><strong>Завершение</strong><br>{escape(ending)}</div>"
+            "</div>"
+            + link_row(
+                [
+                    ("live", f"/markets/live/{item.market_id}"),
+                    ("research", f"/research/markets/{item.market_id}"),
+                    ("decision review", f"/decision-reviews/markets/{item.market_id}"),
+                ]
+            )
+            + "</article>"
+        )
 
     def _proposal_list(self, query: dict[str, list[str]]) -> str:
         scope = self._query_value(query, "scope", "all")
@@ -1165,6 +1296,8 @@ class OperatorDashboardApp:
             return self._analysis(self._params_query(saved, "scope", "outcomes"))
         if saved.kind == "analysis_learning":
             return self._analysis(self._params_query(saved, "scope", "learning_summary"))
+        if saved.kind == "markets_catalog":
+            return self._market_catalog(self._params_query(saved, "scope", "active"))
         raise ValueError(f"Unsupported saved view kind: {saved.kind}")
 
     def _clone_saved_view(self, name: str, query: dict[str, list[str]]) -> str:
@@ -1193,7 +1326,8 @@ class OperatorDashboardApp:
         for key, values in query.items():
             if key == "name":
                 continue
-            merged[key] = self._coerce_query_value(values[-1])
+            target_key = "categories" if saved.kind == "markets_catalog" and key == "category" else key
+            merged[target_key] = [self._coerce_query_value(value) for value in values] if len(values) > 1 else self._coerce_query_value(values[-1])
         target_name = self._query_value(query, "name", name)
         updated = self.services.saved_view_service.save(target_name, saved.kind, merged)
         return shell_page(
@@ -1217,7 +1351,8 @@ class OperatorDashboardApp:
         for key, values in query.items():
             if key in {"name", "kind"}:
                 continue
-            params[key] = self._coerce_query_value(values[-1])
+            target_key = "categories" if kind == "markets_catalog" and key == "category" else key
+            params[target_key] = [self._coerce_query_value(value) for value in values] if len(values) > 1 else self._coerce_query_value(values[-1])
         saved = self.services.saved_view_service.save(name, kind, params)
         return shell_page(
             "Текущий фильтр сохранен",
@@ -1482,7 +1617,10 @@ class OperatorDashboardApp:
         return f"/decision-reviews/markets/{review.market_id}"
 
     def _params_query(self, saved: SavedView, *defaults: tuple[str, str] | str) -> dict[str, list[str]]:
-        params = {key: [str(value)] for key, value in saved.params.items()}
+        params: dict[str, list[str]] = {}
+        for key, value in saved.params.items():
+            query_key = "category" if saved.kind == "markets_catalog" and key == "categories" else key
+            params[query_key] = [str(item) for item in value] if isinstance(value, list) else [str(value)]
         for default in defaults:
             if isinstance(default, tuple):
                 key, value = default
@@ -1514,6 +1652,12 @@ class OperatorDashboardApp:
     def _query_int(self, query: dict[str, list[str]], key: str) -> int | None:
         value = self._query_value(query, key)
         return None if value is None else int(value)
+
+    def _query_float(self, query: dict[str, list[str]], key: str) -> float | None:
+        value = self._query_value(query, key)
+        if value in (None, ""):
+            return None
+        return float(value)
 
     def _coerce_query_value(self, value: str) -> object:
         lowered = value.lower()

@@ -113,7 +113,7 @@ def page(title: str, body: str) -> str:
       border: 1px solid var(--line);
       background: rgba(239,226,208,0.9);
     }}
-    input[type="text"], input[type="password"] {{
+    input[type="text"], input[type="password"], select {{
       width: 100%;
       padding: 10px 12px;
       border-radius: 10px;
@@ -132,6 +132,63 @@ def page(title: str, body: str) -> str:
       gap: 10px;
       flex-wrap: wrap;
       align-items: center;
+    }}
+    .filter-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+    }}
+    .checkbox-list {{
+      display: grid;
+      gap: 8px;
+      max-height: 220px;
+      overflow: auto;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.72);
+    }}
+    .checkbox-list label {{
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      font-weight: 400;
+    }}
+    .market-card-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }}
+    .market-card {{
+      display: grid;
+      gap: 12px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255,255,255,0.78);
+    }}
+    .market-card h3 {{
+      margin: 0;
+      font-size: 1.2rem;
+      line-height: 1.25;
+    }}
+    .market-meta-row {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }}
+    .market-stats {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 12px;
+    }}
+    .market-stats div {{
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(244,239,230,0.6);
     }}
   </style>
 </head>
@@ -227,6 +284,12 @@ def summary_cards(cards: list[tuple[str, object, str]]) -> str:
         )
         + "</div>"
     )
+
+
+def card_grid(cards: list[str], empty_message: str = "Нет данных.") -> str:
+    if not cards:
+        return f'<div class="empty">{escape(empty_message)}</div>'
+    return '<div class="market-card-grid">' + "".join(cards) + "</div>"
 
 
 def flash_message(message: str, tone: str = "warn") -> str:

@@ -588,6 +588,7 @@ class PolymarketAdaptersTest(unittest.TestCase):
                         market_id="mkt_cli_1",
                         question="Will CPI print below consensus?",
                         event_id="evt_macro",
+                        event_title="Macro Calendar",
                         slug="cpi-below-consensus",
                         category="macro",
                         active=active,

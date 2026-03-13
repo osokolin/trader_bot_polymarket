@@ -18,6 +18,7 @@ from bot.services.audit_log import AuditLogService
 from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService
+from bot.services.market_catalog import MarketCatalogBrowseQuery, MarketCatalogBrowseResult
 from bot.services.operator_notifications import OperatorNotificationsService
 from bot.services.outcome_analysis import OutcomeAnalysisService
 from bot.services.proposal_engine import ProposalEngine
@@ -62,7 +63,7 @@ class OperatorUiTest(unittest.TestCase):
             self.market,
             market_id="mkt_ui_other",
             title="Will payrolls beat estimates?",
-            category="crypto",
+            category="politics",
         )
         self.probability = ProbabilityEstimate(
             market_id=self.market.market_id,
@@ -154,10 +155,31 @@ class OperatorUiTest(unittest.TestCase):
                 self.assertIn("Каталог рынков", market_catalog)
                 self.assertIn("Will CPI print below consensus?", market_catalog)
                 self.assertIn(f"/markets/live/{self.market.market_id}", market_catalog)
+                self.assertIn("Категории", market_catalog)
+                self.assertIn("сохранить текущий вид", market_catalog)
+                self.assertIn("Macro Signals", market_catalog)
 
                 _, event_catalog = app.render_response("/catalog/events")
                 self.assertIn("Каталог событий", event_catalog)
                 self.assertIn("Macro Calendar", event_catalog)
+
+                _, market_catalog_filtered = app.render_response(
+                    "/catalog/markets",
+                    "scope=all&category=politics&search=payrolls&min_liquidity=1000&orderbook_only=true&sort=volume_desc&limit=20",
+                )
+                self.assertIn("Will payrolls beat estimates?", market_catalog_filtered)
+                self.assertNotIn("Will CPI print below consensus?", market_catalog_filtered)
+
+                saved_view_service = app.services.saved_view_service
+                saved_view_service.save(
+                    "catalog-markets-default",
+                    "markets_catalog",
+                    {"scope": "all", "categories": ["politics"], "search": "payrolls", "sort": "volume_desc", "limit": 20},
+                )
+                _, market_catalog_saved = app.render_response("/catalog/markets")
+                self.assertIn("Will payrolls beat estimates?", market_catalog_saved)
+                self.assertNotIn("Will CPI print below consensus?", market_catalog_saved)
+                self.assertIn("/views/catalog-markets-default", market_catalog_saved)
 
                 _, missing_market_review = app.render_response("/decision-reviews/markets/mkt_missing_snapshot")
                 self.assertIn("Разбор пока недоступен", missing_market_review)
@@ -191,6 +213,14 @@ class OperatorUiTest(unittest.TestCase):
                 )
                 self.assertIn("Текущий фильтр сохранен", current_saved)
                 self.assertIn("alert-open-ui", current_saved)
+
+                _, catalog_saved = app.render_response(
+                    "/views/save-current",
+                    "name=catalog-markets-default&kind=markets_catalog&scope=all&category=crypto&category=politics&search=payrolls&sort=volume_desc&limit=20",
+                )
+                self.assertIn("catalog-markets-default", catalog_saved)
+                saved_catalog = app.services.saved_view_service.get("catalog-markets-default")
+                self.assertEqual(saved_catalog.params["categories"], ["crypto", "politics"])
             finally:
                 connection.close()
 
@@ -340,6 +370,7 @@ class _FakeMarketCatalogService:
     def __init__(self, primary_market: Market, secondary_market: Market) -> None:
         self.primary_market = primary_market
         self.secondary_market = secondary_market
+        self.browse_calls: list[MarketCatalogBrowseQuery] = []
 
     def list_markets(self, limit: int = 20, active: bool = True, closed: bool = False):
         from bot.adapters.polymarket.models import GammaMarketSummary
@@ -349,6 +380,7 @@ class _FakeMarketCatalogService:
                 market_id=self.primary_market.market_id,
                 question=self.primary_market.title,
                 event_id="evt_macro",
+                event_title="Macro Signals",
                 slug="cpi-below-consensus",
                 category=self.primary_market.category,
                 active=True,
@@ -362,6 +394,7 @@ class _FakeMarketCatalogService:
                 market_id=self.secondary_market.market_id,
                 question=self.secondary_market.title,
                 event_id="evt_macro",
+                event_title="Macro Signals",
                 slug="payrolls-beat-estimates",
                 category=self.secondary_market.category,
                 active=True,
@@ -387,3 +420,59 @@ class _FakeMarketCatalogService:
                 market_count=2,
             )
         ][:limit]
+
+    def browse_markets(self, query: MarketCatalogBrowseQuery) -> MarketCatalogBrowseResult:
+        from bot.adapters.polymarket.models import GammaMarketSummary
+
+        self.browse_calls.append(query)
+        items = [
+            GammaMarketSummary(
+                market_id=self.primary_market.market_id,
+                question=self.primary_market.title,
+                event_id="evt_macro",
+                event_title="Macro Signals",
+                slug="cpi-below-consensus",
+                category=self.primary_market.category,
+                active=True,
+                closed=False,
+                archived=False,
+                enable_order_book=True,
+                liquidity_usd=self.primary_market.liquidity_usd,
+                volume_usd=10000.0,
+            ),
+            GammaMarketSummary(
+                market_id=self.secondary_market.market_id,
+                question=self.secondary_market.title,
+                event_id="evt_macro",
+                event_title="Macro Signals",
+                slug="payrolls-beat-estimates",
+                category=self.secondary_market.category,
+                active=True,
+                closed=False,
+                archived=False,
+                enable_order_book=True,
+                liquidity_usd=self.secondary_market.liquidity_usd,
+                volume_usd=8000.0,
+            ),
+        ]
+        filtered = []
+        normalized_categories = {value.lower() for value in query.categories}
+        for item in items:
+            if normalized_categories and item.category.lower() not in normalized_categories:
+                continue
+            if query.search and query.search.lower() not in item.question.lower() and query.search.lower() not in (item.slug or "").lower():
+                continue
+            if query.min_liquidity is not None and (item.liquidity_usd or 0.0) < query.min_liquidity:
+                continue
+            if query.orderbook_only and not item.enable_order_book:
+                continue
+            filtered.append(item)
+        if query.sort == "volume_desc":
+            filtered.sort(key=lambda item: item.volume_usd or 0.0, reverse=True)
+        else:
+            filtered.sort(key=lambda item: item.liquidity_usd or 0.0, reverse=True)
+        return MarketCatalogBrowseResult(
+            items=filtered[: query.limit],
+            available_categories=["crypto", "politics"],
+            applied_query=query,
+        )
