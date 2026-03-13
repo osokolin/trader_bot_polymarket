@@ -147,6 +147,11 @@ class OperatorUiTest(unittest.TestCase):
         self.assertIn("No proposals exist for this market yet.", market_detail)
         self.assertIn("Для этого рынка пока нет сохраненных probability snapshots", market_detail)
 
+        _, market_catalog = app.render_response("/catalog/markets")
+        self.assertNotIn("Proposal ×", market_catalog)
+        self.assertNotIn(">Review<", market_catalog)
+        self.assertNotIn(">Analysis<", market_catalog)
+
     def test_dashboard_decision_review_analysis_and_cli_wiring(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             connection, app, approved_id, _, intent_id, _ = self._build_fixture(tmp_dir)
@@ -178,6 +183,11 @@ class OperatorUiTest(unittest.TestCase):
                 self.assertIn("Will CPI print below consensus?", market_catalog)
                 self.assertIn(f"/markets/live/{self.market.market_id}", market_catalog)
                 self.assertIn("/catalog/markets/cpi-below-consensus", market_catalog)
+                self.assertIn("Research", market_catalog)
+                self.assertIn("Proposal ×1", market_catalog)
+                self.assertIn("Review", market_catalog)
+                self.assertIn("Analysis", market_catalog)
+                self.assertIn("Fresh", market_catalog)
                 self.assertIn("Категории", market_catalog)
                 self.assertIn('class="help-tip"', market_catalog)
                 self.assertIn("Подсказка по области", market_catalog)

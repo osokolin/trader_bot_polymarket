@@ -289,6 +289,41 @@ class MarketResearchServiceTest(unittest.TestCase):
         self.assertIsNone(context.latest_proposal)
         self.assertIsNone(context.latest_decision_review)
 
+    def test_market_card_signals_include_research_proposal_review_analysis_and_freshness(self) -> None:
+        service = MarketResearchService(
+            proposal_service=_FakeProposalService(self.proposal, self.snapshot, self.drift),  # type: ignore[arg-type]
+            decision_review_service=_FakeDecisionReviewService(self.review),  # type: ignore[arg-type]
+            execution_evaluation_service=_FakeExecutionEvaluationService(self.evaluation),  # type: ignore[arg-type]
+            outcome_analysis_service=_FakeOutcomeAnalysisService([self.learning_snapshot, self.outcomes_snapshot]),  # type: ignore[arg-type]
+        )
+
+        signals = service.get_market_card_signals("mkt_ctx")
+
+        self.assertTrue(signals.has_research)
+        self.assertEqual(signals.proposal_count, 1)
+        self.assertTrue(signals.has_review)
+        self.assertTrue(signals.has_analysis)
+        self.assertTrue(signals.is_fresh)
+        self.assertEqual(signals.fresh_label, "Fresh <1h")
+
+    def test_market_card_signals_stay_empty_when_no_reliable_linkage_exists(self) -> None:
+        service = MarketResearchService(
+            proposal_service=_NoSnapshotProposalService(self.proposal, self.snapshot, self.drift),  # type: ignore[arg-type]
+            decision_review_service=_FakeDecisionReviewService(None),  # type: ignore[arg-type]
+            execution_evaluation_service=_FakeExecutionEvaluationService(None),  # type: ignore[arg-type]
+            outcome_analysis_service=_FakeOutcomeAnalysisService([]),  # type: ignore[arg-type]
+        )
+
+        signals = service.get_market_card_signals("mkt_missing")
+
+        self.assertFalse(signals.has_research)
+        self.assertEqual(signals.proposal_count, 0)
+        self.assertFalse(signals.has_review)
+        self.assertFalse(signals.has_analysis)
+        self.assertFalse(signals.is_fresh)
+        self.assertIsNone(signals.latest_artifact_at)
+        self.assertIsNone(signals.fresh_label)
+
 
 if __name__ == "__main__":
     unittest.main()
