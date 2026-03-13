@@ -20,6 +20,7 @@ from bot.services.execution_pipeline import ExecutionPipelineService
 from bot.services.inbox_handlers import build_default_inbox_handlers
 from bot.services.market_catalog import MarketCatalogService
 from bot.services.market_opportunity_scanner import MarketOpportunityScannerService
+from bot.services.market_research import MarketResearchService
 from bot.services.market_sync import LiveMarketDataService
 from bot.services.operator_notifications import OperatorNotificationsService
 from bot.services.opportunity_proposal_bridge import OpportunityProposalBridgeService
@@ -81,6 +82,7 @@ class AppContainer:
     market_data_service: LiveMarketDataService | None
     realtime_market_feed_service: RealtimeMarketFeedService | None
     market_catalog_service: MarketCatalogService | None
+    market_research_service: MarketResearchService | None
     market_opportunity_scanner: MarketOpportunityScannerService | None
     proposal_service: ProposalLifecycleService
     opportunity_bridge_service: OpportunityProposalBridgeService | None
@@ -110,6 +112,7 @@ class AppContainer:
             reporting_service=self.reporting_service,
             market_data_service=self.market_data_service,
             market_catalog_service=self.market_catalog_service,
+            market_research_service=self.market_research_service,
         )
 
     def dashboard_app(self) -> OperatorDashboardApp:
@@ -184,6 +187,7 @@ def build_app_container(
     market_data_service: LiveMarketDataService | None = None
     realtime_market_feed_service: RealtimeMarketFeedService | None = None
     market_catalog_service: MarketCatalogService | None = None
+    market_research_service: MarketResearchService | None = None
     market_opportunity_scanner: MarketOpportunityScannerService | None = None
     diagnostics_service: PolymarketDiagnosticsService | None = None
     opportunity_bridge_service: OpportunityProposalBridgeService | None = None
@@ -256,6 +260,12 @@ def build_app_container(
         execution_evaluation_repository,
         outcome_analysis_repository,
     )
+    market_research_service = MarketResearchService(
+        proposal_service,
+        decision_review_service,
+        execution_evaluation_service,
+        outcome_analysis_service,
+    )
     saved_view_service = SavedViewService(saved_view_repository)
     reporting_service = ReportingService(
         decision_review_repository,
@@ -315,6 +325,7 @@ def build_app_container(
         market_data_service=market_data_service,
         realtime_market_feed_service=realtime_market_feed_service,
         market_catalog_service=market_catalog_service,
+        market_research_service=market_research_service,
         market_opportunity_scanner=market_opportunity_scanner,
         proposal_service=proposal_service,
         opportunity_bridge_service=opportunity_bridge_service,

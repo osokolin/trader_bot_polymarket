@@ -12,6 +12,7 @@ from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService
 from bot.services.market_catalog import MarketCatalogBrowseQuery, MarketCatalogBrowseResult, MarketCatalogService
+from bot.services.market_research import MarketProposalContext, MarketResearchContext, MarketResearchService
 from bot.services.market_sync import LiveMarketDataService
 from bot.services.operator_notifications import OperatorNotificationsService
 from bot.services.outcome_analysis import OutcomeAnalysisService
@@ -56,6 +57,7 @@ class OperatorDashboardServices:
     reporting_service: ReportingService
     market_data_service: LiveMarketDataService | None = None
     market_catalog_service: MarketCatalogService | None = None
+    market_research_service: MarketResearchService | None = None
 
 
 class OperatorDashboardApp:
@@ -678,6 +680,31 @@ class OperatorDashboardApp:
                 else '<div class="empty">Других рынков в событии не найдено.</div>'
             ),
         )
+        proposal_context = (
+            self.services.market_research_service.get_market_proposal_context(market.market_id)
+            if self.services.market_research_service is not None
+            else MarketProposalContext(
+                market_id=market.market_id,
+                proposals=[],
+                latest_proposal=None,
+                latest_decision_review=None,
+            )
+        )
+        body += self._market_proposal_context_panel(proposal_context)
+        body += self._market_research_context_panel(
+            self.services.market_research_service.get_market_research_context(market.market_id)
+            if self.services.market_research_service is not None
+            else MarketResearchContext(
+                market_id=market.market_id,
+                related_proposals=[],
+                latest_probability_snapshot=None,
+                probability_drift=None,
+                latest_decision_review=None,
+                latest_execution_evaluation=None,
+                latest_outcome_analysis=None,
+                latest_learning_analysis=None,
+            )
+        )
         return page(f"Рынок {market.question}", body)
 
     def _market_outcomes_block(self, outcomes: list, snapshot, market_id: str, live_error: str | None) -> str:
@@ -749,6 +776,177 @@ class OperatorDashboardApp:
         if not rendered:
             return ""
         return '<div class="toolbar">' + " ".join(rendered) + "</div>"
+
+    def _market_proposal_context_panel(self, context: MarketProposalContext) -> str:
+        if context.latest_proposal is None:
+            return panel("Proposal Context", '<div class="empty">No proposals exist for this market yet.</div>')
+
+        latest = context.latest_proposal
+        latest_review = context.latest_decision_review
+        timeline_items = [
+            self._status_item(
+                proposal.proposal_id,
+                proposal.status.value,
+                f"/proposals/{proposal.proposal_id}",
+                f"updated={proposal.updated_at.isoformat()} edge={proposal.edge:.4f} confidence={proposal.confidence:.2f}",
+                tone="good" if proposal.status.value == "approved" else "warn",
+            )
+            for proposal in context.proposals
+        ]
+        content = (
+            self._kv(
+                [
+                    ("market_id", context.market_id),
+                    ("total_proposals", context.proposal_count),
+                    ("latest_proposal_id", latest.proposal_id),
+                    ("latest_status", latest.status.value),
+                    ("latest_timestamp", latest.updated_at.isoformat()),
+                ]
+            )
+            + "<h3>Latest proposal</h3>"
+            + self._kv(
+                [
+                    ("proposal_id", latest.proposal_id),
+                    ("status", latest.status.value),
+                    ("created_at", latest.created_at.isoformat()),
+                    ("updated_at", latest.updated_at.isoformat()),
+                    ("price_target", f"{latest.current_limit_price:.4f}"),
+                    ("size_usd", f"{latest.current_size_usd:.2f}"),
+                    ("summary", f"edge={latest.edge:.4f} confidence={latest.confidence:.2f}"),
+                ]
+            )
+            + link_row([("proposal page", f"/proposals/{latest.proposal_id}")])
+            + (
+                ""
+                if latest_review is None
+                else "<h3>Latest decision review</h3>"
+                + self._kv(
+                    [
+                        ("review_id", latest_review.review_id),
+                        ("decision_status", latest_review.confidence_outcome),
+                        ("review_timestamp", latest_review.created_at.isoformat()),
+                    ]
+                )
+                + link_row([("decision review", f"/decision-reviews/proposals/{latest_review.proposal_id}")])
+            )
+            + "<h3>Proposal timeline</h3>"
+            + list_items(timeline_items, "No proposals exist for this market yet.")
+        )
+        return panel("Proposal Context", content)
+
+    def _market_research_context_panel(self, context: MarketResearchContext) -> str:
+        blocks = [
+            panel("Снимок вероятности", self._market_probability_snapshot_block(context)),
+            panel("Контекст решений", self._market_decision_context_block(context)),
+            panel("Контекст анализа и исполнения", self._market_analysis_context_block(context)),
+            panel(
+                "Заметки оператора",
+                '<div class="empty">Заметки оператора пока не поддерживаются. Здесь появится место для ручных заметок в будущих milestone.</div>',
+            ),
+        ]
+        if not context.has_artifacts:
+            blocks.insert(
+                0,
+                panel(
+                    "Research / operator context",
+                    '<div class="empty">Для этого рынка пока нет сохраненных probability snapshots, decision reviews, execution evaluations или analysis artifacts.</div>',
+                ),
+            )
+        return "".join(blocks)
+
+    def _market_probability_snapshot_block(self, context: MarketResearchContext) -> str:
+        snapshot = context.latest_probability_snapshot
+        if snapshot is None:
+            return '<div class="empty">Для этого рынка пока нет probability snapshot.</div>'
+        drift_summary = "недостаточно истории" if context.probability_drift is None else (context.probability_drift.drift_summary or "недостаточно истории")
+        return (
+            self._kv(
+                [
+                    ("snapshot_id", snapshot.snapshot_id),
+                    ("fair_probability", f"{snapshot.probability.fair_probability:.4f}"),
+                    ("confidence", f"{snapshot.probability.confidence:.2f}"),
+                    ("source_count", snapshot.probability.source_count),
+                    ("research_summary", snapshot.research_summary.summary),
+                    ("drift_summary", drift_summary),
+                    ("created_at", snapshot.created_at.isoformat()),
+                ]
+            )
+            + chips(snapshot.research_summary.evidence_summary, empty_message="нет сводки по evidence")
+            + link_row([("research snapshot", f"/research/markets/{context.market_id}")])
+        )
+
+    def _market_decision_context_block(self, context: MarketResearchContext) -> str:
+        review = context.latest_decision_review
+        review_block = (
+            '<div class="empty">Для этого рынка пока нет decision review.</div>'
+            if review is None
+            else self._kv(
+                [
+                    ("review_id", review.review_id),
+                    ("summary", review.summary),
+                    ("confidence", review.confidence_outcome),
+                    ("probability", review.probability_outcome),
+                    ("execution", review.execution_outcome),
+                    ("created_at", review.created_at.isoformat()),
+                ]
+            )
+            + link_row([("decision review", f"/decision-reviews/markets/{context.market_id}")])
+        )
+        proposal_items = [
+            self._status_item(
+                proposal.proposal_id,
+                proposal.status.value,
+                f"/proposals/{proposal.proposal_id}",
+                (
+                    f"{proposal.market_title} | edge={proposal.edge:.4f} "
+                    f"confidence={proposal.confidence:.2f} updated={proposal.updated_at.isoformat()}"
+                ),
+                tone="good" if proposal.status.value == "approved" else "warn",
+            )
+            for proposal in context.related_proposals
+        ]
+        return review_block + "<h3>Связанные предложения</h3>" + list_items(proposal_items, "Для этого рынка пока нет связанных предложений.")
+
+    def _market_analysis_context_block(self, context: MarketResearchContext) -> str:
+        sections: list[str] = []
+        if context.latest_execution_evaluation is not None:
+            proposal_link = None
+            if context.latest_execution_evaluation.proposal_id is not None:
+                proposal_link = f"/decision-reviews/proposals/{context.latest_execution_evaluation.proposal_id}"
+            sections.append(
+                "<h3>Последняя оценка исполнения</h3>"
+                + self._kv(
+                    [
+                        ("evaluation_id", context.latest_execution_evaluation.evaluation_id),
+                        ("verdict", context.latest_execution_evaluation.verdict),
+                        ("summary", context.latest_execution_evaluation.summary),
+                        ("created_at", context.latest_execution_evaluation.created_at.isoformat()),
+                    ]
+                )
+                + link_row([("decision review", proposal_link)] if proposal_link is not None else [])
+            )
+        if context.latest_outcome_analysis is not None:
+            sections.append(self._market_analysis_reference_block("Последний outcome analysis", context.latest_outcome_analysis))
+        if context.latest_learning_analysis is not None:
+            sections.append(self._market_analysis_reference_block("Последний learning summary", context.latest_learning_analysis))
+        if not sections:
+            return '<div class="empty">Для этого рынка пока нет execution evaluation или analysis artifacts.</div>'
+        return "".join(sections)
+
+    def _market_analysis_reference_block(self, title: str, reference) -> str:
+        return (
+            f"<h3>{escape(title)}</h3>"
+            + self._kv(
+                [
+                    ("snapshot_id", reference.snapshot_id),
+                    ("summary", reference.summary),
+                    ("review_count", reference.group.review_count),
+                    ("evaluation_count", reference.group.evaluation_count),
+                    ("created_at", reference.created_at.isoformat()),
+                ]
+            )
+            + link_row([("analysis view", f"/analysis?scope={reference.scope}&group_by=market&latest=1")])
+        )
 
     def _proposal_list(self, query: dict[str, list[str]]) -> str:
         scope = self._query_value(query, "scope", "all")
