@@ -67,12 +67,14 @@ class _FakeExecutionAdapter:
 class _FakeTelegramOperatorService:
     def __init__(self) -> None:
         self.fail_scan = False
+        self.fail_opportunity_scan = False
         self.notifications = []
         self.approved: list[tuple[str, int]] = []
         self.rejected: list[tuple[str, int]] = []
         self.cancelled: list[tuple[str, int]] = []
         self.analysis_requested: list[tuple[str, int]] = []
         self.request_actions: list[tuple[str, str, int]] = []
+        self.opportunity_scans: list[tuple[int, int]] = []
         self._requests = self._build_requests()
 
     def get_status(self):
@@ -117,6 +119,29 @@ class _FakeTelegramOperatorService:
                 ],
                 "scanned_count": 1,
                 "skipped_count": 0,
+                "warning_messages": [],
+            },
+        )()
+
+    def scan_opportunities(self, chat_id: int, limit: int = 200):
+        if self.fail_opportunity_scan:
+            raise RuntimeError("Opportunity scan is cooling down. Try again in 60s.")
+        self.opportunity_scans.append((chat_id, limit))
+        return type(
+            "OpportunityScanResult",
+            (),
+            {
+                "created_alerts": [
+                    type(
+                        "Alert",
+                        (),
+                        {
+                            "summary": "New relevant market: Russia-Ukraine Ceasefire before GTA VI?",
+                        },
+                    )()
+                ],
+                "scanned_count": 200,
+                "relevant_count": 2,
                 "warning_messages": [],
             },
         )()
@@ -442,6 +467,28 @@ class TelegramOperatorTest(unittest.TestCase):
         self.assertIn("Scanner results", replies[0].text)
         self.assertIn("Inflation above 4% in 2025", replies[0].text)
 
+    def test_scan_opportunities_returns_summary_and_supports_limit_argument(self) -> None:
+        service = _FakeTelegramOperatorService()
+        router = TelegramRouter(TelegramOperatorAuth({123}), service)  # type: ignore[arg-type]
+        reply = router.handle_update({"message": {"chat": {"id": 123}, "text": "/scan-opportunities 150"}})[0]
+        self.assertIn("Opportunity scan complete", reply.text)
+        self.assertIn("Scanned: 200", reply.text)
+        self.assertIn("Created alerts: 1", reply.text)
+        self.assertIn("Russia-Ukraine Ceasefire before GTA VI?", reply.text)
+        self.assertEqual(service.opportunity_scans, [(123, 150)])
+
+    def test_scan_opportunities_respects_authorization(self) -> None:
+        router = TelegramRouter(TelegramOperatorAuth({123}), _FakeTelegramOperatorService())  # type: ignore[arg-type]
+        replies = router.handle_update({"message": {"chat": {"id": 999}, "text": "/scan-opportunities"}})
+        self.assertEqual(replies[0].text, "Unauthorized operator.")
+
+    def test_scan_opportunities_cooldown_error_is_operator_readable(self) -> None:
+        service = _FakeTelegramOperatorService()
+        service.fail_opportunity_scan = True
+        router = TelegramRouter(TelegramOperatorAuth({123}), service)  # type: ignore[arg-type]
+        reply = router.handle_update({"message": {"chat": {"id": 123}, "text": "/scan-opportunities"}})[0]
+        self.assertIn("Command failed: Opportunity scan is cooling down.", reply.text)
+
     def test_inbox_and_request_commands_render_request_cards(self) -> None:
         service = _FakeTelegramOperatorService()
         router = TelegramRouter(TelegramOperatorAuth({123}), service)  # type: ignore[arg-type]
@@ -726,11 +773,28 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
             settings=self.settings,
             profile="balanced",
             execution_adapter=self.execution_adapter,
+            audit_log=AuditLogService(self.audit_repository),
             proposal_service=self.proposal_service,
             decision_review_service=self.decision_review_service,
             decision_inbox_service=self.decision_inbox_service,
             notifications_service=self.notifications_service,
             scanner_service=type("Scanner", (), {"scan": lambda *args, **kwargs: None})(),
+            market_opportunity_alert_service=type(
+                "OpportunityAlerts",
+                (),
+                {
+                    "scan": lambda *args, **kwargs: type(
+                        "Result",
+                        (),
+                        {
+                            "created_alerts": [],
+                            "scanned_count": 0,
+                            "relevant_count": 0,
+                            "warning_messages": [],
+                        },
+                    )(),
+                },
+            )(),
             diagnostics_service=self._FakeDiagnosticsService(),
         )
 
@@ -796,6 +860,46 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
         self.assertIsNotNone(next_view)
         assert next_view is not None
         self.assertEqual(next_view.request.request_id, alert_request.request_id)
+
+    def test_scan_opportunities_uses_existing_service_and_cooldown(self) -> None:
+        proposal = self._create_proposal()
+        self.operator_service.market_opportunity_alert_service = type(
+            "OpportunityAlerts",
+            (),
+            {
+                "scan": lambda *args, **kwargs: type(
+                    "Result",
+                    (),
+                    {
+                        "created_alerts": [
+                            OperatorAlert(
+                                alert_id="alert_123",
+                                alert_type=AlertType.NEW_RELEVANT_MARKET,
+                                severity=AlertSeverity.INFO,
+                                state=AlertState.OPEN,
+                                entity_type=WatchTargetType.MARKET,
+                                entity_id=proposal.market_id,
+                                related_market_id=proposal.market_id,
+                                related_proposal_id=None,
+                                summary="New relevant market: test",
+                                payload={},
+                                created_at=utc_now(),
+                            )
+                        ],
+                        "scanned_count": 50,
+                        "relevant_count": 2,
+                        "warning_messages": [],
+                    },
+                )(),
+            },
+        )()
+        result = self.operator_service.scan_opportunities(chat_id=777, limit=150)
+        self.assertEqual(result.scanned_count, 50)
+        self.assertEqual(len(result.created_alerts), 1)
+        audits = self.audit_repository.list_for_entity("chat:777")
+        self.assertEqual(audits[0]["event_type"], "telegram_opportunity_scan")
+        with self.assertRaisesRegex(RuntimeError, "cooling down"):
+            self.operator_service.scan_opportunities(chat_id=777, limit=150)
 
 
 if __name__ == "__main__":

@@ -316,6 +316,7 @@ Catalog entry points:
 - CLI: `bot markets scan [--min-edge N] [--min-liquidity N] [--limit N]`
 - CLI: `bot alerts scan-opportunities [--limit N]`
 - CLI: `bot markets draft-opportunities [--min-edge N] [--min-liquidity N] [--limit N]`
+- Telegram: `/scan-opportunities [limit]`
 - UI: `/catalog/markets`
 - UI: `/catalog/events`
 - UI: `/catalog/markets/<slug>`
@@ -338,6 +339,8 @@ Web catalog notes:
 `bot markets scan` is a read-only opportunity scan. It scans active markets, loads current cached-or-live market pricing, applies a deterministic scanner fair-value heuristic, computes `edge = fair_probability - market_price`, filters by absolute edge magnitude, and sorts the output by descending absolute edge then confidence.
 
 `bot alerts scan-opportunities` is the dedicated one-shot operator command for discovery alerts. It polls active markets, matches explicit tracked categories/keywords, checks high-liquidity and resolving-soon thresholds, looks for already-existing conservative system context, and creates deduplicated open alerts through the existing alert workflow. It does not create proposals or execution actions. Country-keyword matches are intentionally suppressed for clearly sports-like markets (for example FIFA/World Cup qualifying markets) to keep alert volume trustworthy.
+
+Telegram reuses the same service path via `/scan-opportunities [limit]` and returns a compact operator summary. A short in-memory cooldown prevents accidental re-trigger spam from the same runtime.
 `bot markets draft-opportunities` stays read-only with respect to execution: it runs the scanner, skips markets that already have an active proposal, and creates safe draft proposals through the existing proposal lifecycle only. It does not approve proposals, create intents, or change execution behavior.
 
 Approval revalidation now fails closed if public market data is stale, malformed, or unavailable.
