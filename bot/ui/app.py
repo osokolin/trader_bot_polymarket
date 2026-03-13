@@ -12,7 +12,7 @@ from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService
 from bot.services.market_catalog import MarketCatalogBrowseQuery, MarketCatalogBrowseResult, MarketCatalogService
-from bot.services.market_research import MarketProposalContext, MarketResearchContext, MarketResearchService
+from bot.services.market_research import MarketCardSignals, MarketProposalContext, MarketResearchContext, MarketResearchService
 from bot.services.market_sync import LiveMarketDataService
 from bot.services.operator_notifications import OperatorNotificationsService
 from bot.services.outcome_analysis import OutcomeAnalysisService
@@ -427,7 +427,8 @@ class OperatorDashboardApp:
         browse_query = self._parse_market_catalog_query(effective_query)
         browse_result = self.services.market_catalog_service.browse_markets(browse_query)
         save_query = self._market_catalog_query_string(browse_result.applied_query)
-        saved_default = self.services.saved_view_service.get(self.CATALOG_DEFAULT_VIEW)
+        saved_view_service = self.services.saved_view_service
+        saved_default = saved_view_service.get(self.CATALOG_DEFAULT_VIEW) if hasattr(saved_view_service, "get") else None
         active_count = len([item for item in browse_result.items if item.active and not item.closed])
         closed_count = len([item for item in browse_result.items if item.closed])
         pagination = self._market_catalog_pagination(browse_result)
@@ -519,7 +520,10 @@ class OperatorDashboardApp:
             return {}
         if any(key in query for key in self.CATALOG_FILTER_KEYS):
             return query
-        saved = self.services.saved_view_service.get(self.CATALOG_DEFAULT_VIEW)
+        saved_view_service = self.services.saved_view_service
+        if not hasattr(saved_view_service, "get"):
+            return query
+        saved = saved_view_service.get(self.CATALOG_DEFAULT_VIEW)
         if saved is not None and saved.kind == "markets_catalog":
             return self._params_query(saved, "scope", "active", "sort", "liquidity_desc", "page_size", "20")
         return query
@@ -669,6 +673,7 @@ class OperatorDashboardApp:
         return f"Категорий выбрано: {len(categories)}"
 
     def _market_catalog_card(self, item) -> str:
+        signals = self.services.market_research_service.get_market_card_signals(item.market_id) if self.services.market_research_service is not None else None
         status_tone = "good" if item.active and not item.closed else "warn"
         orderbook_tone = "good" if item.enable_order_book else "bad"
         liquidity = "-" if item.liquidity_usd is None else f"${item.liquidity_usd:,.0f}"
@@ -681,6 +686,7 @@ class OperatorDashboardApp:
             '<div class="market-meta-row">'
             f'{badge(item.category, "warn")} {badge("активен" if item.active and not item.closed else "закрыт", status_tone)} {badge("orderbook" if item.enable_order_book else "без orderbook", orderbook_tone)}'
             "</div>"
+            f'{self._market_catalog_signal_badges(signals)}'
             f'<div class="meta">event: {escape(item.event_title or item.event_id or "-")}</div>'
             '<div class="market-stats">'
             f"<div><strong>Ликвидность</strong><br>{escape(liquidity)}</div>"
@@ -688,16 +694,27 @@ class OperatorDashboardApp:
             f"<div><strong>Slug</strong><br>{escape(item.slug or item.market_id)}</div>"
             f"<div><strong>Завершение</strong><br>{escape(ending)}</div>"
             "</div>"
-            + link_row(
-                [
-                    ("detail", detail_href),
-                    ("live", f"/markets/live/{item.market_id}"),
-                    ("research", f"/research/markets/{item.market_id}"),
-                    ("decision review", f"/decision-reviews/markets/{item.market_id}"),
-                ]
-            )
-            + "</article>"
+            f'{link_row([("detail", detail_href), ("live", f"/markets/live/{item.market_id}"), ("research", f"/research/markets/{item.market_id}"), ("decision review", f"/decision-reviews/markets/{item.market_id}")])}'
+            "</article>"
         )
+
+    def _market_catalog_signal_badges(self, signals: MarketCardSignals | None) -> str:
+        if signals is None:
+            return ""
+        badges: list[str] = []
+        if signals.has_research:
+            badges.append(badge("Research", "good"))
+        if signals.proposal_count > 0:
+            badges.append(badge(f"Proposal ×{signals.proposal_count}", "warn"))
+        if signals.has_review:
+            badges.append(badge("Review", "warn"))
+        if signals.has_analysis:
+            badges.append(badge("Analysis", "warn"))
+        if signals.is_fresh:
+            badges.append(badge(signals.fresh_label or "Fresh", "good"))
+        if not badges:
+            return ""
+        return '<div class="market-meta-row">' + " ".join(badges) + "</div>"
 
     def _market_detail(self, slug_or_market_id: str) -> str:
         if self.services.market_catalog_service is None:
