@@ -18,6 +18,7 @@ def help_message() -> str:
         "/status\n"
         "/diagnostics\n"
         "/scan\n"
+        "/scan-opportunities [limit]\n"
         "/inbox\n"
         "/review\n"
         "/review-next\n"
@@ -79,6 +80,24 @@ def scan_message(result) -> str:
             f"  market={item.market_id} edge={item.edge:+.4f} fair={item.fair_probability:.4f} "
             f"price={item.market_price:.4f} conf={item.confidence:.2f}"
         )
+    return "\n".join(lines)
+
+
+def opportunity_scan_message(result) -> str:
+    lines = [
+        "Opportunity scan complete",
+        "",
+        f"Scanned: {result.scanned_count}",
+        f"Relevant: {result.relevant_count}",
+        f"Created alerts: {len(result.created_alerts)}",
+    ]
+    if result.warning_messages:
+        lines.extend(["", "Warnings:"])
+        lines.extend(f"- {item}" for item in result.warning_messages[:3])
+    elif result.created_alerts:
+        lines.extend(["", "Created:"])
+        for alert in result.created_alerts[:5]:
+            lines.append(f"- {alert.summary}")
     return "\n".join(lines)
 
 
