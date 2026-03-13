@@ -133,11 +133,51 @@ def page(title: str, body: str) -> str:
       flex-wrap: wrap;
       align-items: center;
     }}
-    .field-help {{
-      font-weight: 400;
+    .field-label {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }}
+    .help-tip {{
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--chip);
       color: var(--muted);
-      font-size: 0.88rem;
+      font-size: 0.78rem;
+      cursor: help;
+    }}
+    .help-tip::after {{
+      content: attr(data-help);
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 10px);
+      transform: translateX(-50%);
+      min-width: 220px;
+      max-width: 280px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      font-size: 0.82rem;
+      font-weight: 400;
       line-height: 1.35;
+      box-shadow: 0 10px 24px rgba(31,26,23,0.08);
+      opacity: 0;
+      pointer-events: none;
+      white-space: normal;
+      z-index: 4;
+    }}
+    .help-tip:hover::after,
+    .help-tip:focus-visible::after {{
+      opacity: 1;
     }}
     .pagination {{
       display: flex;
@@ -169,6 +209,42 @@ def page(title: str, body: str) -> str:
       gap: 8px;
       align-items: center;
       font-weight: 400;
+    }}
+    .compact-multiselect {{
+      display: grid;
+      gap: 8px;
+    }}
+    .compact-multiselect details {{
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.9);
+    }}
+    .compact-multiselect summary {{
+      list-style: none;
+      cursor: pointer;
+      padding: 10px 12px;
+      color: var(--ink);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }}
+    .compact-multiselect summary::-webkit-details-marker {{
+      display: none;
+    }}
+    .compact-multiselect summary::after {{
+      content: "▾";
+      color: var(--muted);
+      flex: 0 0 auto;
+    }}
+    .compact-multiselect details[open] summary {{
+      border-bottom: 1px solid var(--line);
+    }}
+    .compact-multiselect .checkbox-list {{
+      border: 0;
+      border-radius: 0 0 12px 12px;
+      max-height: 240px;
+      background: transparent;
     }}
     .market-card-grid {{
       display: grid;
