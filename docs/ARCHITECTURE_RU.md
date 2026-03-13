@@ -149,6 +149,24 @@ Environment переменные:
 
     /var/lib/trader_bot_polymarket/bot.db
 
+
+## Opportunity Discovery Runtime
+
+Opportunity scanning runs automatically in the Telegram runtime loop.
+
+Flow:
+
+TelegramBotApp.run_cycle()
+  → TelegramOperatorService.poll_notifications()
+  → background opportunity scan (if interval elapsed)
+  → MarketOpportunityAlertService.scan(...)
+  → alert persistence
+  → Telegram delivery
+
+Manual triggers remain available:
+- CLI: bot alerts scan-opportunities
+- Telegram: /scan-opportunities
+
 ------------------------------------------------------------------------
 
 ## Будущие компоненты

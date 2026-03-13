@@ -379,6 +379,16 @@ Database ........... OK (sqlite ready)
 Overall status ..... FAIL
 ```
 
+## Automatic Opportunity Discovery
+
+When the Telegram runtime is active, the bot periodically scans markets for new opportunities.
+
+Scan cadence is controlled by:
+
+market_opportunity_alerts.poll_interval_seconds
+
+New alerts are automatically delivered to Telegram.
+
 ## Testing
 
 Run the test suite:
