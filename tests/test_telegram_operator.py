@@ -416,6 +416,11 @@ class _FakeTelegramClient:
         pass
 
 
+class _FailingTelegramClient(_FakeTelegramClient):
+    def send_message_with_markup(self, chat_id: int, text: str, reply_markup: dict[str, object] | None) -> None:
+        raise RuntimeError("telegram transport down")
+
+
 def _build_proposal() -> TradeProposal:
     now = utc_now()
     return TradeProposal(
@@ -634,6 +639,62 @@ class TelegramOperatorTest(unittest.TestCase):
         self.assertTrue(any("New Draft Proposal" in text for text in texts))
         self.assertTrue(any("Alert" in text for text in texts))
         self.assertTrue(any(markup is not None for _, _, markup in client.sent_messages_with_markup))
+
+    def test_opportunity_alert_notification_formatting_is_compact(self) -> None:
+        text = formatter.notification_message(
+            TelegramNotification(
+                "alert",
+                OperatorAlert(
+                    alert_id="alert_market_1",
+                    alert_type=AlertType.HIGH_LIQUIDITY_MARKET,
+                    severity=AlertSeverity.WARNING,
+                    state=AlertState.OPEN,
+                    entity_type=WatchTargetType.MARKET,
+                    entity_id="540816",
+                    related_market_id="540816",
+                    related_proposal_id=None,
+                    summary="High-liquidity relevant market: Putin out as President of Russia by end of 2026?",
+                    payload={
+                        "why": "liquidity_usd=72,000 >= 50,000",
+                        "liquidity_usd": 72000.0,
+                        "slug": "putin-out-as-president-of-russia-by-end-of-2026",
+                    },
+                    created_at=utc_now(),
+                ),
+            )
+        )
+        self.assertIn("High-liquidity relevant market", text)
+        self.assertIn("market: 540816", text)
+        self.assertIn("liquidity: 72,000", text)
+        self.assertNotIn("{", text)
+
+    def test_notification_delivery_failure_does_not_break_poll_cycle(self) -> None:
+        service = _FakeTelegramOperatorService()
+        service.notifications = [
+            TelegramNotification(
+                "alert",
+                OperatorAlert(
+                    alert_id="alert_1",
+                    alert_type=AlertType.NEW_RELEVANT_MARKET,
+                    severity=AlertSeverity.INFO,
+                    state=AlertState.OPEN,
+                    entity_type=WatchTargetType.MARKET,
+                    entity_id="540816",
+                    related_market_id="540816",
+                    related_proposal_id=None,
+                    summary="New relevant market: Russia-Ukraine Ceasefire before GTA VI?",
+                    payload={"why": "keyword=russia, keyword=ukraine"},
+                    created_at=utc_now(),
+                ),
+            )
+        ]
+        app = TelegramBotApp(
+            client=_FailingTelegramClient(),  # type: ignore[arg-type]
+            router=TelegramRouter(TelegramOperatorAuth({123}), service),  # type: ignore[arg-type]
+            operator_service=service,  # type: ignore[arg-type]
+        )
+        next_offset = app.run_cycle()
+        self.assertIsNone(next_offset)
 
     def test_formatter_diagnostics_message_is_concise(self) -> None:
         text = formatter.notification_message(
@@ -900,6 +961,27 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
         self.assertEqual(audits[0]["event_type"], "telegram_opportunity_scan")
         with self.assertRaisesRegex(RuntimeError, "cooling down"):
             self.operator_service.scan_opportunities(chat_id=777, limit=150)
+
+    def test_new_opportunity_alert_is_delivered_once_via_poll_notifications(self) -> None:
+        self.operator_service.poll_notifications()
+        alert = self.notifications_service.create_market_opportunity_alert(
+            alert_type=AlertType.NEW_RELEVANT_MARKET,
+            market_id=self.market.market_id,
+            severity=AlertSeverity.INFO,
+            summary="New relevant market: Inflation above 4% by Dec 2026",
+            payload={"why": "category=crypto", "slug": "inflation-above-4-by-dec-2026"},
+        )
+        assert alert is not None
+
+        first = self.operator_service.poll_notifications()
+        second = self.operator_service.poll_notifications()
+
+        self.assertEqual([item.kind for item in first], ["alert"])
+        self.assertEqual(first[0].payload.alert_id, alert.alert_id)
+        self.assertEqual(second, [])
+        inbox = self.operator_service.list_inbox()
+        self.assertEqual(len(inbox), 1)
+        self.assertEqual(inbox[0].entity_id, alert.alert_id)
 
 
 if __name__ == "__main__":

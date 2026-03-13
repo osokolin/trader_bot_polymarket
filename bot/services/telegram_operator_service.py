@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from time import monotonic
 
 from bot.config.models import Settings
-from bot.domain.enums import AlertState, ProposalStatus
+from bot.domain.enums import AlertState, AlertType, ProposalStatus
 from bot.domain.models import DecisionReview, OperatorActionRequest, OperatorAlert, TradeProposal
 from bot.services.audit_log import AuditLogService
 from bot.services.decision_inbox import DecisionInboxActionResult, DecisionInboxRequestView, DecisionInboxService
@@ -55,6 +55,12 @@ class TelegramOperatorService:
     _last_opportunity_scan_monotonic: float = 0.0
     diagnostics_poll_interval_seconds: float = 300.0
     opportunity_scan_cooldown_seconds: float = 60.0
+    opportunity_alert_types: tuple[AlertType, ...] = (
+        AlertType.NEW_RELEVANT_MARKET,
+        AlertType.HIGH_LIQUIDITY_MARKET,
+        AlertType.RESOLVING_SOON_MARKET,
+        AlertType.POTENTIAL_CONTEXT_MARKET,
+    )
 
     def get_status(self) -> dict[str, object]:
         safety = build_runtime_safety_snapshot(
@@ -232,7 +238,10 @@ class TelegramOperatorService:
         for alert in open_alerts:
             if alert.alert_id not in self._seen_alert_ids:
                 request = self.decision_inbox_service.create_alert_request(alert, source="telegram_poll")
-                notifications.append(TelegramNotification("inbox_request", request))
+                if alert.alert_type in self.opportunity_alert_types:
+                    notifications.append(TelegramNotification("alert", alert))
+                else:
+                    notifications.append(TelegramNotification("inbox_request", request))
                 self._seen_alert_ids.add(alert.alert_id)
 
         if diagnostics is not None:

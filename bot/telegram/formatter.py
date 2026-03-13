@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from bot.domain.enums import AlertType
 from bot.domain.enums import OperatorActionRequestStatus, OperatorActionRequestType, ProposalStatus
 from bot.services.telegram_operator_service import TelegramNotification
 from bot.telegram.actions import proposal_callback, request_callback
@@ -257,6 +258,30 @@ def command_error_message(exc: Exception) -> str:
     return f"Command failed: {exc}"
 
 
+def _opportunity_alert_message(alert) -> str:
+    label = {
+        AlertType.NEW_RELEVANT_MARKET: "New relevant market",
+        AlertType.HIGH_LIQUIDITY_MARKET: "High-liquidity relevant market",
+        AlertType.RESOLVING_SOON_MARKET: "Relevant market resolving soon",
+        AlertType.POTENTIAL_CONTEXT_MARKET: "Relevant market with system context",
+    }.get(alert.alert_type, "Market alert")
+    payload = alert.payload
+    lines = [label, "", alert.summary.removeprefix(f"{label}: ").strip() or alert.summary]
+    market_ref = alert.related_market_id or alert.entity_id
+    if market_ref:
+        lines.append(f"market: {market_ref}")
+    why = payload.get("why")
+    if isinstance(why, str) and why:
+        lines.append(f"why: {why}")
+    liquidity = payload.get("liquidity_usd")
+    if isinstance(liquidity, (int, float)) and alert.alert_type == AlertType.HIGH_LIQUIDITY_MARKET:
+        lines.append(f"liquidity: {liquidity:,.0f}")
+    resolution_time = payload.get("resolution_time")
+    if isinstance(resolution_time, str) and resolution_time and alert.alert_type == AlertType.RESOLVING_SOON_MARKET:
+        lines.append(f"resolves: {resolution_time}")
+    return "\n".join(lines)
+
+
 def notification_message(notification: TelegramNotification) -> str:
     if notification.kind == "draft_proposal":
         proposal = notification.payload
@@ -270,6 +295,13 @@ def notification_message(notification: TelegramNotification) -> str:
         )
     if notification.kind == "alert":
         alert = notification.payload
+        if alert.alert_type in {
+            AlertType.NEW_RELEVANT_MARKET,
+            AlertType.HIGH_LIQUIDITY_MARKET,
+            AlertType.RESOLVING_SOON_MARKET,
+            AlertType.POTENTIAL_CONTEXT_MARKET,
+        }:
+            return _opportunity_alert_message(alert)
         return f"Alert\n\n{alert.summary}\nType: {alert.alert_type.value}"
     if notification.kind == "diagnostics_failure":
         return f"Diagnostics failure\n\n{diagnostics_message(notification.payload)}"
