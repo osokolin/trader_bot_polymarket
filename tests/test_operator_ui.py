@@ -19,6 +19,7 @@ from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService
 from bot.services.market_catalog import MarketCatalogBrowseQuery, MarketCatalogBrowseResult, MarketCatalogDetail, MarketCatalogOutcome
+from bot.services.market_research import MarketResearchService
 from bot.services.operator_notifications import OperatorNotificationsService
 from bot.services.outcome_analysis import OutcomeAnalysisService
 from bot.services.proposal_engine import ProposalEngine
@@ -125,6 +126,27 @@ class OperatorUiTest(unittest.TestCase):
             finally:
                 connection.close()
 
+    def test_market_detail_shows_empty_proposal_context_without_related_artifacts(self) -> None:
+        app = OperatorDashboardApp(
+            OperatorDashboardServices(
+                proposal_service=object(),  # type: ignore[arg-type]
+                execution_service=object(),  # type: ignore[arg-type]
+                notifications_service=object(),  # type: ignore[arg-type]
+                decision_review_service=object(),  # type: ignore[arg-type]
+                execution_evaluation_service=object(),  # type: ignore[arg-type]
+                outcome_analysis_service=object(),  # type: ignore[arg-type]
+                saved_view_service=object(),  # type: ignore[arg-type]
+                reporting_service=object(),  # type: ignore[arg-type]
+                market_catalog_service=_FakeMarketCatalogService(self.market, self.other_market),
+            )
+        )
+
+        _, market_detail = app.render_response("/catalog/markets/payrolls-beat-estimates")
+
+        self.assertIn("Proposal Context", market_detail)
+        self.assertIn("No proposals exist for this market yet.", market_detail)
+        self.assertIn("Для этого рынка пока нет сохраненных probability snapshots", market_detail)
+
     def test_dashboard_decision_review_analysis_and_cli_wiring(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             connection, app, approved_id, _, intent_id, _ = self._build_fixture(tmp_dir)
@@ -165,6 +187,16 @@ class OperatorUiTest(unittest.TestCase):
                 self.assertIn("Критерии резолюции", market_detail)
                 self.assertIn("Связанные рынки в событии", market_detail)
                 self.assertIn("открыть на Polymarket", market_detail)
+                self.assertIn("Proposal Context", market_detail)
+                self.assertIn("Latest proposal", market_detail)
+                self.assertIn("Proposal timeline", market_detail)
+                self.assertIn(f"/proposals/{approved_id}", market_detail)
+                self.assertIn("Снимок вероятности", market_detail)
+                self.assertIn("Контекст решений", market_detail)
+                self.assertIn("Контекст анализа и исполнения", market_detail)
+                self.assertIn("/research/markets/mkt_ui_primary", market_detail)
+                self.assertIn("/decision-reviews/markets/mkt_ui_primary", market_detail)
+                self.assertIn("/analysis?scope=outcomes&amp;group_by=market&amp;latest=1", market_detail)
 
                 _, event_catalog = app.render_response("/catalog/events")
                 self.assertIn("Каталог событий", event_catalog)
@@ -194,6 +226,11 @@ class OperatorUiTest(unittest.TestCase):
 
                 _, market_detail_missing = app.render_response("/catalog/markets/payrolls-beat-estimates")
                 self.assertIn("Правила в API не заполнены", market_detail_missing)
+                self.assertIn("Proposal Context", market_detail_missing)
+                self.assertIn("Latest proposal", market_detail_missing)
+                self.assertIn("Снимок вероятности", market_detail_missing)
+                self.assertIn("Для этого рынка пока нет decision review.", market_detail_missing)
+                self.assertIn("Заметки оператора", market_detail_missing)
 
                 _, views = app.render_response("/views")
                 self.assertIn("Сохраненные виды", views)
@@ -371,6 +408,12 @@ class OperatorUiTest(unittest.TestCase):
                 saved_view_service=saved_view_service,
                 reporting_service=reporting_service,
                 market_catalog_service=market_catalog_service,
+                market_research_service=MarketResearchService(
+                    proposal_service,
+                    decision_review_service,
+                    execution_evaluation_service,
+                    outcome_analysis_service,
+                ),
             )
         )
         return connection, app, approved.proposal_id, pending.proposal_id, intent.intent_id, alerts[0].alert_id
