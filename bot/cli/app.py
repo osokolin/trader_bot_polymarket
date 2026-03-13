@@ -26,6 +26,7 @@ from bot.cli.presenter import (
     latest_execution_lines,
     list_header_lines,
     market_catalog_lines,
+    market_opportunity_alert_lines,
     market_opportunity_lines,
     opportunity_draft_lines,
     proposal_detail_lines,
@@ -226,6 +227,8 @@ def build_parser() -> argparse.ArgumentParser:
     alerts = subparsers.add_parser("alerts")
     alerts_sub = alerts.add_subparsers(dest="alerts_command")
     alerts_sub.add_parser("scan")
+    alerts_opportunities = alerts_sub.add_parser("scan-opportunities")
+    alerts_opportunities.add_argument("--limit", type=int, default=200)
     alerts_list = alerts_sub.add_parser("list")
     alerts_list.add_argument("--watchlist-only", action="store_true")
     alerts_list.add_argument("--state", choices=["open", "acknowledged", "dismissed", "resolved"])
@@ -384,6 +387,7 @@ def main(argv: list[str] | None = None) -> int:
         market_data_service = container.market_data_service
         realtime_market_feed_service = container.realtime_market_feed_service
         market_catalog_service = container.market_catalog_service
+        market_opportunity_alert_service = container.market_opportunity_alert_service
         market_opportunity_scanner = container.market_opportunity_scanner
         proposal_service = container.proposal_service
         opportunity_bridge_service = container.opportunity_bridge_service
@@ -637,6 +641,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "alerts" and args.alerts_command == "scan":
             _print_lines(alert_lines(notifications_service.scan()))
+            return 0
+        if args.command == "alerts" and args.alerts_command == "scan-opportunities":
+            _print_lines(market_opportunity_alert_lines(market_opportunity_alert_service.scan(settings, limit=args.limit)))
             return 0
         if args.command == "alerts" and args.alerts_command == "list":
             state = None if args.state is None else AlertState(args.state)

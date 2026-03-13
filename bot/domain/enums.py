@@ -119,6 +119,10 @@ class AlertType(str, Enum):
     APPROVED_PROPOSAL_STALE = "approved_proposal_stale"
     ACTIVE_INTENT_SUPERSEDED = "active_intent_superseded"
     SIMULATED_EXECUTION_RECORDED = "simulated_execution_recorded"
+    NEW_RELEVANT_MARKET = "new_relevant_market"
+    HIGH_LIQUIDITY_MARKET = "high_liquidity_market"
+    RESOLVING_SOON_MARKET = "resolving_soon_market"
+    POTENTIAL_CONTEXT_MARKET = "potential_context_market"
 
 
 class AlertSeverity(str, Enum):

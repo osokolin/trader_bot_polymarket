@@ -95,6 +95,16 @@ class BlacklistConfig:
 
 
 @dataclass(slots=True)
+class MarketOpportunityAlertsConfig:
+    tracked_categories: list[str]
+    tracked_keywords: list[str]
+    liquidity_threshold: float
+    resolving_soon_days: int
+    poll_interval_seconds: int
+    enabled_alert_types: list[str]
+
+
+@dataclass(slots=True)
 class Settings:
     mode: BotMode
     bankroll: BankrollConfig
@@ -108,4 +118,4 @@ class Settings:
     sources: SourcesConfig
     whitelist: WhitelistConfig
     blacklist: BlacklistConfig
-
+    market_opportunity_alerts: MarketOpportunityAlertsConfig

@@ -314,6 +314,7 @@ Catalog entry points:
 - CLI: `bot markets catalog --scope active|closed|all [--limit N]`
 - CLI: `bot events catalog --scope active|closed|all [--limit N]`
 - CLI: `bot markets scan [--min-edge N] [--min-liquidity N] [--limit N]`
+- CLI: `bot alerts scan-opportunities [--limit N]`
 - CLI: `bot markets draft-opportunities [--min-edge N] [--min-liquidity N] [--limit N]`
 - UI: `/catalog/markets`
 - UI: `/catalog/events`
@@ -335,6 +336,8 @@ Web catalog notes:
 - clicking a market card opens a read-only detail page with market overview, rules, outcomes, related event markets, external Polymarket/Gamma links, persisted research/operator context, and proposal history for that market when available
 
 `bot markets scan` is a read-only opportunity scan. It scans active markets, loads current cached-or-live market pricing, applies a deterministic scanner fair-value heuristic, computes `edge = fair_probability - market_price`, filters by absolute edge magnitude, and sorts the output by descending absolute edge then confidence.
+
+`bot alerts scan-opportunities` is a separate read-only discovery alert pass. It polls active markets, matches explicit tracked categories/keywords, checks high-liquidity and resolving-soon thresholds, looks for already-existing conservative system context, and creates deduplicated open alerts through the existing alert workflow. It does not create proposals or execution actions.
 `bot markets draft-opportunities` stays read-only with respect to execution: it runs the scanner, skips markets that already have an active proposal, and creates safe draft proposals through the existing proposal lifecycle only. It does not approve proposals, create intents, or change execution behavior.
 
 Approval revalidation now fails closed if public market data is stale, malformed, or unavailable.

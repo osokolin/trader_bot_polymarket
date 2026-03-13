@@ -19,6 +19,7 @@ from bot.services.execution_evaluation import ExecutionEvaluationService
 from bot.services.execution_pipeline import ExecutionPipelineService
 from bot.services.inbox_handlers import build_default_inbox_handlers
 from bot.services.market_catalog import MarketCatalogService
+from bot.services.market_opportunity_alerts import MarketOpportunityAlertService
 from bot.services.market_opportunity_scanner import MarketOpportunityScannerService
 from bot.services.market_research import MarketResearchService
 from bot.services.market_sync import LiveMarketDataService
@@ -83,6 +84,7 @@ class AppContainer:
     realtime_market_feed_service: RealtimeMarketFeedService | None
     market_catalog_service: MarketCatalogService | None
     market_research_service: MarketResearchService | None
+    market_opportunity_alert_service: MarketOpportunityAlertService | None
     market_opportunity_scanner: MarketOpportunityScannerService | None
     proposal_service: ProposalLifecycleService
     opportunity_bridge_service: OpportunityProposalBridgeService | None
@@ -163,6 +165,7 @@ def build_app_container(
     realtime_market_feed_service_cls: type[RealtimeMarketFeedService] = RealtimeMarketFeedService,
     market_catalog_service_cls: type[MarketCatalogService] = MarketCatalogService,
     scanner_service_cls: type[MarketOpportunityScannerService] = MarketOpportunityScannerService,
+    market_opportunity_alert_service_cls: type[MarketOpportunityAlertService] = MarketOpportunityAlertService,
     diagnostics_service_cls: type[PolymarketDiagnosticsService] = PolymarketDiagnosticsService,
     opportunity_bridge_service_cls: type[OpportunityProposalBridgeService] = OpportunityProposalBridgeService,
 ) -> AppContainer:
@@ -188,6 +191,7 @@ def build_app_container(
     realtime_market_feed_service: RealtimeMarketFeedService | None = None
     market_catalog_service: MarketCatalogService | None = None
     market_research_service: MarketResearchService | None = None
+    market_opportunity_alert_service: MarketOpportunityAlertService | None = None
     market_opportunity_scanner: MarketOpportunityScannerService | None = None
     diagnostics_service: PolymarketDiagnosticsService | None = None
     opportunity_bridge_service: OpportunityProposalBridgeService | None = None
@@ -285,6 +289,12 @@ def build_app_container(
             scanner_service=market_opportunity_scanner,
             proposal_service=proposal_service,
         )
+    if market_catalog_service is not None and market_research_service is not None:
+        market_opportunity_alert_service = market_opportunity_alert_service_cls(
+            market_catalog_service=market_catalog_service,
+            notifications_service=notifications_service,
+            market_research_service=market_research_service,
+        )
 
     if include_telegram_runtime and diagnostics_service is not None and market_opportunity_scanner is not None:
         decision_inbox_service = DecisionInboxService(
@@ -326,6 +336,7 @@ def build_app_container(
         realtime_market_feed_service=realtime_market_feed_service,
         market_catalog_service=market_catalog_service,
         market_research_service=market_research_service,
+        market_opportunity_alert_service=market_opportunity_alert_service,
         market_opportunity_scanner=market_opportunity_scanner,
         proposal_service=proposal_service,
         opportunity_bridge_service=opportunity_bridge_service,
@@ -358,6 +369,7 @@ def build_app_container_from_config(
     realtime_market_feed_service_cls: type[RealtimeMarketFeedService] = RealtimeMarketFeedService,
     market_catalog_service_cls: type[MarketCatalogService] = MarketCatalogService,
     scanner_service_cls: type[MarketOpportunityScannerService] = MarketOpportunityScannerService,
+    market_opportunity_alert_service_cls: type[MarketOpportunityAlertService] = MarketOpportunityAlertService,
     diagnostics_service_cls: type[PolymarketDiagnosticsService] = PolymarketDiagnosticsService,
     opportunity_bridge_service_cls: type[OpportunityProposalBridgeService] = OpportunityProposalBridgeService,
 ) -> AppContainer:
@@ -374,6 +386,7 @@ def build_app_container_from_config(
         realtime_market_feed_service_cls=realtime_market_feed_service_cls,
         market_catalog_service_cls=market_catalog_service_cls,
         scanner_service_cls=scanner_service_cls,
+        market_opportunity_alert_service_cls=market_opportunity_alert_service_cls,
         diagnostics_service_cls=diagnostics_service_cls,
         opportunity_bridge_service_cls=opportunity_bridge_service_cls,
     )
