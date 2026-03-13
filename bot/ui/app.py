@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from html import escape
 from http.cookies import SimpleCookie
 import json
@@ -61,7 +61,7 @@ class OperatorDashboardServices:
 
 
 class OperatorDashboardApp:
-    CATALOG_FILTER_KEYS = {"scope", "category", "search", "min_liquidity", "orderbook_only", "sort", "limit"}
+    CATALOG_FILTER_KEYS = {"scope", "category", "search", "min_liquidity", "orderbook_only", "sort", "limit", "page", "page_size"}
     CATALOG_DEFAULT_VIEW = "catalog-markets-default"
     FIELD_LABELS = {
         "scope": "Область",
@@ -430,6 +430,8 @@ class OperatorDashboardApp:
         saved_default = self.services.saved_view_service.get(self.CATALOG_DEFAULT_VIEW)
         active_count = len([item for item in browse_result.items if item.active and not item.closed])
         closed_count = len([item for item in browse_result.items if item.closed])
+        pagination = self._market_catalog_pagination(browse_result)
+        save_fields = self._market_catalog_saved_view_fields(browse_result.applied_query)
         body = hero("Каталог рынков", "Публичный список рынков Polymarket через Gamma API.")
         body += panel(
             "Фильтры",
@@ -438,27 +440,41 @@ class OperatorDashboardApp:
                 [
                     ("scope", browse_result.applied_query.scope),
                     ("returned", len(browse_result.items)),
+                    ("total", browse_result.total_count),
                     ("active_count", active_count),
                     ("closed_count", closed_count),
                 ]
             )
-            + link_row(
-                [("сбросить фильтры", "/catalog/markets?reset=1")]
-                + [
-                    (
-                        "обновить сохраненный вид" if saved_default is not None else "сохранить текущий вид",
-                        f"/views/save-current?name={self.CATALOG_DEFAULT_VIEW}&kind=markets_catalog&{save_query}",
-                    )
-                ]
-                + ([("открыть сохраненный вид", f"/views/{self.CATALOG_DEFAULT_VIEW}")] if saved_default is not None else [])
+            + link_row([("сбросить фильтры", "/catalog/markets?reset=1")] + ([("открыть сохраненный вид", f"/views/{self.CATALOG_DEFAULT_VIEW}")] if saved_default is not None else []))
+            + (
+                link_row(
+                    [
+                        (
+                            "обновить сохраненный вид" if saved_default is not None else "сохранить текущий вид",
+                            f"/views/save-current?name={self.CATALOG_DEFAULT_VIEW}&kind=markets_catalog&{save_query}",
+                        )
+                    ]
+                )
+                if self._request_csrf_token is None
+                else post_action_row(
+                    [
+                        (
+                            "обновить сохраненный вид" if saved_default is not None else "сохранить текущий вид",
+                            "/views/save-current",
+                            {"csrf_token": self._request_csrf_token, **save_fields},
+                            "warn",
+                        )
+                    ]
+                )
             ),
         )
         body += panel(
-            f"Рынки ({len(browse_result.items)})",
+            f"Рынки ({browse_result.total_count})",
             card_grid(
                 [self._market_catalog_card(item) for item in browse_result.items],
                 "По текущим browse-фильтрам рынки не найдены.",
-            ),
+            )
+            + pagination,
             meta="Browse-only фильтры не меняют policy scope или scanner/pipeline настройки.",
         )
         return page("Каталог рынков", body)
@@ -504,7 +520,7 @@ class OperatorDashboardApp:
             return query
         saved = self.services.saved_view_service.get(self.CATALOG_DEFAULT_VIEW)
         if saved is not None and saved.kind == "markets_catalog":
-            return self._params_query(saved, "scope", "active", "sort", "liquidity_desc", "limit", "20")
+            return self._params_query(saved, "scope", "active", "sort", "liquidity_desc", "page_size", "20")
         return query
 
     def _parse_market_catalog_query(self, query: dict[str, list[str]]) -> MarketCatalogBrowseQuery:
@@ -516,9 +532,14 @@ class OperatorDashboardApp:
         sort = self._query_value(query, "sort", "liquidity_desc") or "liquidity_desc"
         if sort not in {"liquidity_desc", "volume_desc", "ending_soon", "newest"}:
             sort = "liquidity_desc"
-        limit = self._query_int(query, "limit") or 20
-        if limit <= 0:
-            limit = 20
+        page = self._query_int(query, "page") or 1
+        if page <= 0:
+            page = 1
+        page_size = self._query_int(query, "page_size") or self._query_int(query, "limit") or 20
+        if page_size <= 0:
+            page_size = 20
+        if page_size > 100:
+            page_size = 100
         categories = [value for value in query.get("category", []) if value.strip()]
         return MarketCatalogBrowseQuery(
             scope=scope,
@@ -527,11 +548,17 @@ class OperatorDashboardApp:
             min_liquidity=self._query_float(query, "min_liquidity"),
             orderbook_only=self._query_value(query, "orderbook_only", "false") in {"1", "true", "yes"},
             sort=sort,
-            limit=limit,
+            page=page,
+            page_size=page_size,
         )
 
     def _market_catalog_query_string(self, query: MarketCatalogBrowseQuery) -> str:
-        params: list[tuple[str, str]] = [("scope", query.scope), ("sort", query.sort), ("limit", str(query.limit))]
+        params: list[tuple[str, str]] = [
+            ("scope", query.scope),
+            ("sort", query.sort),
+            ("page", str(query.page)),
+            ("page_size", str(query.page_size)),
+        ]
         if query.search:
             params.append(("search", query.search))
         if query.min_liquidity is not None:
@@ -571,22 +598,62 @@ class OperatorDashboardApp:
             for value, label in [("active", "активные"), ("closed", "закрытые"), ("all", "все")]
         )
         min_liquidity = "" if query.min_liquidity is None else str(int(query.min_liquidity) if query.min_liquidity.is_integer() else query.min_liquidity)
+        page_size_options = "".join(
+            f'<option value="{value}"' + (' selected' if value == query.page_size else "") + f'>{value}</option>'
+            for value in (10, 20, 50, 100)
+        )
         return (
             '<form method="get" action="/catalog/markets">'
             '<div class="filter-grid">'
-            '<label class="field">Область<select name="scope">'
+            '<label class="field">Область<div class="field-help">Что смотреть в каталоге: активные рынки, закрытые или все.</div><select name="scope">'
             + scope_options
             + '</select></label>'
-            f'<label class="field">Поиск<input type="text" name="search" value="{escape(query.search, quote=True)}" placeholder="question, slug, event"></label>'
-            f'<label class="field">Мин. ликвидность<input type="text" name="min_liquidity" value="{escape(min_liquidity, quote=True)}" placeholder="10000"></label>'
-            f'<label class="field">Сортировка<select name="sort">{sort_options}</select></label>'
-            f'<label class="field">Лимит<input type="text" name="limit" value="{escape(str(query.limit), quote=True)}"></label>'
-            f'<label class="field">Опции<div class="checkbox-list"><label><input type="checkbox" name="orderbook_only" value="true"{checked}> только orderbook</label></div></label>'
-            f'<label class="field">Категории<div class="checkbox-list">{category_options}</div></label>'
+            f'<label class="field">Поиск<div class="field-help">Ищем по question, slug, event title и stable market id.</div><input type="text" name="search" value="{escape(query.search, quote=True)}" placeholder="question, slug, event"></label>'
+            f'<label class="field">Мин. ликвидность<div class="field-help">Отсекает слишком тонкие рынки по надежному полю liquidity.</div><input type="text" name="min_liquidity" value="{escape(min_liquidity, quote=True)}" placeholder="10000"></label>'
+            f'<label class="field">Сортировка<div class="field-help">Доступны только сортировки, которые реально поддерживаются текущими данными Gamma.</div><select name="sort">{sort_options}</select></label>'
+            f'<label class="field">Размер страницы<div class="field-help">Сколько карточек показывать на одной странице каталога.</div><select name="page_size">{page_size_options}</select></label>'
+            f'<label class="field">Опции<div class="field-help">Показывать только рынки с включенным orderbook.</div><div class="checkbox-list"><label><input type="checkbox" name="orderbook_only" value="true"{checked}> только orderbook</label></div></label>'
+            f'<label class="field">Категории<div class="field-help">Browse-only multi-select. Категории берутся из upstream metadata и консервативно нормализуются.</div><div class="checkbox-list">{category_options}</div></label>'
             "</div>"
             '<div class="form-actions"><button type="submit">Применить</button><a href="/catalog/markets?reset=1">Сбросить</a></div>'
             "</form>"
         )
+
+    def _market_catalog_pagination(self, result: MarketCatalogBrowseResult) -> str:
+        query = result.applied_query
+        total_pages = result.total_pages
+        if total_pages <= 1:
+            return f'<div class="pagination"><span class="meta">Страница 1 из 1 • показано {len(result.items)} из {result.total_count}</span></div>'
+
+        links: list[tuple[str, str]] = []
+        if query.page > 1:
+            links.append(("← предыдущая", f"/catalog/markets?{self._market_catalog_query_string(replace(query, page=query.page - 1))}"))
+        if query.page < total_pages:
+            links.append(("следующая →", f"/catalog/markets?{self._market_catalog_query_string(replace(query, page=query.page + 1))}"))
+        return (
+            '<div class="pagination">'
+            f'<span class="meta">Страница {query.page} из {total_pages} • показано {len(result.items)} из {result.total_count}</span>'
+            + "".join(f'<a href="{escape(href, quote=True)}">{escape(label)}</a>' for label, href in links)
+            + "</div>"
+        )
+
+    def _market_catalog_saved_view_fields(self, query: MarketCatalogBrowseQuery) -> dict[str, object]:
+        fields: dict[str, object] = {
+            "name": self.CATALOG_DEFAULT_VIEW,
+            "kind": "markets_catalog",
+            "scope": query.scope,
+            "sort": query.sort,
+            "page_size": str(query.page_size),
+        }
+        if query.search:
+            fields["search"] = query.search
+        if query.min_liquidity is not None:
+            fields["min_liquidity"] = str(int(query.min_liquidity) if query.min_liquidity.is_integer() else query.min_liquidity)
+        if query.orderbook_only:
+            fields["orderbook_only"] = "true"
+        if query.categories:
+            fields["category"] = query.categories
+        return fields
 
     def _market_catalog_card(self, item) -> str:
         status_tone = "good" if item.active and not item.closed else "warn"
@@ -1635,7 +1702,7 @@ class OperatorDashboardApp:
         if saved.kind == "analysis_learning":
             return self._analysis(self._params_query(saved, "scope", "learning_summary"))
         if saved.kind == "markets_catalog":
-            return self._market_catalog(self._params_query(saved, "scope", "active"))
+            return self._market_catalog(self._params_query(saved, "scope", "active", "page_size", "20"))
         raise ValueError(f"Unsupported saved view kind: {saved.kind}")
 
     def _clone_saved_view(self, name: str, query: dict[str, list[str]]) -> str:
@@ -1665,6 +1732,8 @@ class OperatorDashboardApp:
             if key == "name":
                 continue
             target_key = "categories" if saved.kind == "markets_catalog" and key == "category" else key
+            if saved.kind == "markets_catalog" and key == "limit":
+                target_key = "page_size"
             merged[target_key] = [self._coerce_query_value(value) for value in values] if len(values) > 1 else self._coerce_query_value(values[-1])
         target_name = self._query_value(query, "name", name)
         updated = self.services.saved_view_service.save(target_name, saved.kind, merged)
@@ -1690,6 +1759,8 @@ class OperatorDashboardApp:
             if key in {"name", "kind"}:
                 continue
             target_key = "categories" if kind == "markets_catalog" and key == "category" else key
+            if kind == "markets_catalog" and key == "limit":
+                target_key = "page_size"
             params[target_key] = [self._coerce_query_value(value) for value in values] if len(values) > 1 else self._coerce_query_value(values[-1])
         saved = self.services.saved_view_service.save(name, kind, params)
         return shell_page(
@@ -2033,12 +2104,14 @@ class AuthenticatedOperatorDashboardApp(OperatorDashboardApp):
         path: str,
         query_string: str = "",
         form_data: dict[str, str] | None = None,
+        form_lists: dict[str, list[str]] | None = None,
         cookies: dict[str, str] | None = None,
         remote_addr: str = "127.0.0.1",
         user_agent: str | None = None,
     ) -> tuple[str, list[tuple[str, str]], str]:
         cookies = cookies or {}
         form_data = form_data or {}
+        form_lists = form_lists or {}
         auth_service = self.auth_service
         if auth_service is None:
             status, body = self.render_response(path, query_string)
@@ -2123,7 +2196,7 @@ class AuthenticatedOperatorDashboardApp(OperatorDashboardApp):
                 if method != "POST":
                     return self._html_response("405 Method Not Allowed", self._error_page("Метод не поддерживается"))
                 self.auth_service.verify_csrf(authenticated, form_data.get("csrf_token"))
-                routed_query = self._encode_query({key: value for key, value in form_data.items() if key != "csrf_token"})
+                routed_query = self._encode_query({key: value for key, value in form_lists.items() if key != "csrf_token"})
                 status, body = self.render_response(path, routed_query, csrf_token=authenticated.csrf_token)
                 return self._html_response(status, body, authenticated.set_cookies)
 
@@ -2141,17 +2214,20 @@ class AuthenticatedOperatorDashboardApp(OperatorDashboardApp):
         query = environ.get("QUERY_STRING", "")
         cookies = self._parse_cookies(environ.get("HTTP_COOKIE", ""))
         form_data: dict[str, str] = {}
+        form_lists: dict[str, list[str]] = {}
         if method == "POST":
             raw_length = environ.get("CONTENT_LENGTH", "0") or "0"
             length = int(raw_length) if raw_length.isdigit() else 0
             payload = environ["wsgi.input"].read(length).decode("utf-8") if length else ""
             parsed = parse_qs(payload, keep_blank_values=False)
+            form_lists = {key: values for key, values in parsed.items() if values}
             form_data = {key: values[-1] for key, values in parsed.items() if values}
         status, headers, body = self.render_http_response(
             method=method,
             path=path,
             query_string=query,
             form_data=form_data,
+            form_lists=form_lists,
             cookies=cookies,
             remote_addr=environ.get("REMOTE_ADDR", "127.0.0.1"),
             user_agent=environ.get("HTTP_USER_AGENT"),
@@ -2292,8 +2368,8 @@ class AuthenticatedOperatorDashboardApp(OperatorDashboardApp):
         jar.load(cookie_header)
         return {key: morsel.value for key, morsel in jar.items()}
 
-    def _encode_query(self, params: dict[str, str]) -> str:
-        return urlencode(params)
+    def _encode_query(self, params: dict[str, object]) -> str:
+        return urlencode(params, doseq=True)
 
     def _is_state_changing_route(self, path: str) -> bool:
         return (

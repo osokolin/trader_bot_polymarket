@@ -9,6 +9,22 @@ from bot.adapters.polymarket.gamma_client import GammaApiClient
 from bot.adapters.polymarket.models import GammaEventSummary, GammaMarketSummary
 
 
+_CATEGORY_LABELS = {
+    "ai": "AI",
+    "business": "Business",
+    "crypto": "Crypto",
+    "culture": "Culture",
+    "economics": "Economics",
+    "finance": "Finance",
+    "macro": "Macro",
+    "politics": "Politics",
+    "science": "Science",
+    "sports": "Sports",
+    "technology": "Technology",
+    "world": "World",
+}
+
+
 def _optional_float(payload: dict[str, object], key: str) -> float | None:
     value = payload.get(key)
     if value is None:
@@ -40,6 +56,13 @@ def _optional_datetime(payload: dict[str, object], *keys: str) -> datetime | Non
 def _normalize_category(value: str) -> str:
     normalized = " ".join(value.replace("_", " ").replace("-", " ").split()).strip().lower()
     return normalized or "unknown"
+
+
+def _display_category(value: str) -> str:
+    normalized = _normalize_category(value)
+    if normalized == "unknown":
+        return "unknown"
+    return _CATEGORY_LABELS.get(normalized, normalized.title())
 
 
 def _first_present(payload: dict[str, object], *keys: str) -> object | None:
@@ -80,7 +103,8 @@ class MarketCatalogBrowseQuery:
     min_liquidity: float | None = None
     orderbook_only: bool = False
     sort: str = "liquidity_desc"
-    limit: int = 20
+    page: int = 1
+    page_size: int = 20
 
 
 @dataclass(slots=True)
@@ -88,7 +112,14 @@ class MarketCatalogBrowseResult:
     items: list[GammaMarketSummary]
     available_categories: list[str]
     applied_query: MarketCatalogBrowseQuery
+    total_count: int
     supported_sorts: tuple[str, ...] = ("liquidity_desc", "volume_desc", "ending_soon", "newest")
+
+    @property
+    def total_pages(self) -> int:
+        if self.applied_query.page_size <= 0:
+            return 1
+        return max(1, (self.total_count + self.applied_query.page_size - 1) // self.applied_query.page_size)
 
 
 @dataclass(slots=True)
@@ -130,7 +161,7 @@ class MarketCatalogService:
         )
 
     def browse_markets(self, query: MarketCatalogBrowseQuery) -> MarketCatalogBrowseResult:
-        batch_limit = max(query.limit * 6, 120)
+        batch_limit = max(query.page_size * 6, 120)
         if query.scope == "all":
             payloads = self.gamma_client.list_markets(limit=batch_limit, active=True, closed=False)
             payloads.extend(self.gamma_client.list_markets(limit=batch_limit, active=False, closed=True))
@@ -176,10 +207,14 @@ class MarketCatalogService:
             filtered_items.append(item)
 
         filtered_items.sort(key=self._sort_key(query.sort), reverse=self._reverse_sort(query.sort))
+        total_count = len(filtered_items)
+        start = max(0, (query.page - 1) * query.page_size)
+        end = start + query.page_size
         return MarketCatalogBrowseResult(
-            items=filtered_items[: query.limit],
+            items=filtered_items[start:end],
             available_categories=available_categories,
             applied_query=query,
+            total_count=total_count,
         )
 
     def list_events(self, limit: int = 20, active: bool = True, closed: bool = False) -> list[GammaEventSummary]:
@@ -219,7 +254,7 @@ class MarketCatalogService:
                         None if payload.get("eventTitle") is None else str(payload.get("eventTitle"))
                     ),
                     slug=None if payload.get("slug") is None else str(payload.get("slug")),
-                    category=str(payload.get("category") or "unknown"),
+                    category=self._resolve_category(payload, event_payload),
                     active=bool(payload.get("active", True)),
                     closed=bool(payload.get("closed", False)),
                     archived=bool(payload.get("archived", False)),
@@ -266,6 +301,42 @@ class MarketCatalogService:
                 if not any(existing.label == label for existing in outcomes):
                     outcomes.append(MarketCatalogOutcome(label=label, token_id=None))
         return outcomes or [MarketCatalogOutcome(label="Outcome", token_id=None)]
+
+    def _resolve_category(self, payload: dict[str, object], event_payload: object) -> str:
+        candidates: list[str] = []
+        for key in ("category", "series", "groupItemTitle", "groupTitle"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                candidates.append(value)
+        if isinstance(event_payload, dict):
+            for key in ("category", "series", "groupItemTitle", "groupTitle"):
+                value = event_payload.get(key)
+                if isinstance(value, str) and value.strip():
+                    candidates.append(value)
+            candidates.extend(self._extract_tag_candidates(event_payload.get("tags")))
+        candidates.extend(self._extract_tag_candidates(payload.get("tags")))
+
+        for value in candidates:
+            display = _display_category(value)
+            if display != "unknown":
+                return display
+        return "unknown"
+
+    def _extract_tag_candidates(self, raw_tags: object) -> list[str]:
+        if not isinstance(raw_tags, list):
+            return []
+        values: list[str] = []
+        for tag in raw_tags:
+            if isinstance(tag, str) and tag.strip():
+                values.append(tag)
+                continue
+            if isinstance(tag, dict):
+                for key in ("label", "name", "title", "slug"):
+                    value = tag.get(key)
+                    if isinstance(value, str) and value.strip():
+                        values.append(value)
+                        break
+        return values
 
     def _related_markets(self, payload: dict[str, object], current_market_id: str) -> tuple[str | None, list[GammaMarketSummary]]:
         event_payload = payload.get("event")

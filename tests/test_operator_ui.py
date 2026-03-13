@@ -179,8 +179,11 @@ class OperatorUiTest(unittest.TestCase):
                 self.assertIn(f"/markets/live/{self.market.market_id}", market_catalog)
                 self.assertIn("/catalog/markets/cpi-below-consensus", market_catalog)
                 self.assertIn("Категории", market_catalog)
+                self.assertIn("Что смотреть в каталоге", market_catalog)
+                self.assertIn("Размер страницы", market_catalog)
                 self.assertIn("сохранить текущий вид", market_catalog)
                 self.assertIn("Macro Signals", market_catalog)
+                self.assertIn("Страница 1 из 1", market_catalog)
 
                 _, market_detail = app.render_response("/catalog/markets/cpi-below-consensus")
                 self.assertIn("Карточка рынка", market_detail)
@@ -204,7 +207,7 @@ class OperatorUiTest(unittest.TestCase):
 
                 _, market_catalog_filtered = app.render_response(
                     "/catalog/markets",
-                    "scope=all&category=politics&search=payrolls&min_liquidity=1000&orderbook_only=true&sort=volume_desc&limit=20",
+                    "scope=all&category=politics&search=payrolls&min_liquidity=1000&orderbook_only=true&sort=volume_desc&page_size=20",
                 )
                 self.assertIn("Will payrolls beat estimates?", market_catalog_filtered)
                 self.assertNotIn("Will CPI print below consensus?", market_catalog_filtered)
@@ -213,7 +216,7 @@ class OperatorUiTest(unittest.TestCase):
                 saved_view_service.save(
                     "catalog-markets-default",
                     "markets_catalog",
-                    {"scope": "all", "categories": ["politics"], "search": "payrolls", "sort": "volume_desc", "limit": 20},
+                    {"scope": "all", "categories": ["politics"], "search": "payrolls", "sort": "volume_desc", "page_size": 20},
                 )
                 _, market_catalog_saved = app.render_response("/catalog/markets")
                 self.assertIn("Will payrolls beat estimates?", market_catalog_saved)
@@ -268,6 +271,7 @@ class OperatorUiTest(unittest.TestCase):
                 self.assertIn("catalog-markets-default", catalog_saved)
                 saved_catalog = app.services.saved_view_service.get("catalog-markets-default")
                 self.assertEqual(saved_catalog.params["categories"], ["crypto", "politics"])
+                self.assertEqual(saved_catalog.params["page_size"], 20)
             finally:
                 connection.close()
 
@@ -524,17 +528,20 @@ class _FakeMarketCatalogService:
             filtered.sort(key=lambda item: item.volume_usd or 0.0, reverse=True)
         else:
             filtered.sort(key=lambda item: item.liquidity_usd or 0.0, reverse=True)
+        start = max(0, (query.page - 1) * query.page_size)
+        end = start + query.page_size
         return MarketCatalogBrowseResult(
-            items=filtered[: query.limit],
+            items=filtered[start:end],
             available_categories=["crypto", "politics"],
             applied_query=query,
+            total_count=len(filtered),
         )
 
     def get_market_detail(self, slug_or_market_id: str) -> MarketCatalogDetail:
         if slug_or_market_id == "cpi-below-consensus":
-            market = self.browse_markets(MarketCatalogBrowseQuery(limit=10)).items[0]
+            market = self.browse_markets(MarketCatalogBrowseQuery(page_size=10)).items[0]
             related = [
-                self.browse_markets(MarketCatalogBrowseQuery(limit=10)).items[1],
+                self.browse_markets(MarketCatalogBrowseQuery(page_size=10)).items[1],
             ]
             return MarketCatalogDetail(
                 market=market,
@@ -550,7 +557,7 @@ class _FakeMarketCatalogService:
                 polymarket_url="https://polymarket.com/event/macro-signals",
                 gamma_url="https://gamma-api.polymarket.com/markets?slug=cpi-below-consensus",
             )
-        market = self.browse_markets(MarketCatalogBrowseQuery(limit=10)).items[1]
+        market = self.browse_markets(MarketCatalogBrowseQuery(page_size=10)).items[1]
         return MarketCatalogDetail(
             market=market,
             description_text="",
