@@ -1,31 +1,85 @@
-# Changelog
+# CHANGELOG
 
-## v1.0.0
+All notable changes to this project will be documented in this file.
 
-Initial operator-ready release.
+---
 
-### Added
+# Unreleased
 
-- Policy-first proposal engine with YAML configuration and typed settings.
-- Composite policy evaluation with namespaced detail aggregation.
-- Proposal lifecycle with manual approval, rejection, edit flows, TTL expiry, and audit logging.
-- Polymarket market metadata and order-book adapters for approval-time revalidation.
-- Persisted order intents with strict semi-auto execution boundary.
-- Paper execution simulation with bid/ask-aware fills, latency, partial fills, expiry, and cancellation paths.
-- Probability snapshot persistence, research summaries, drift comparison, and evidence modeling.
-- Decision reviews, execution evaluations, and grouped outcome analysis snapshots.
-- Operator watchlists, alerts, saved views, exports, digests, demo seed workflow, and runtime safety inspection.
-- Lightweight operator dashboard UI for proposals, intents, alerts, research, decision reviews, analysis, and exports.
-- Demo seeding and smoke-test coverage for local operator workflows.
+## Added
 
-### Defaults and safety
+Operator workflow improvements:
 
-- `architecture: policy-first`
-- `mode: semi_auto`
-- live execution disabled
-- no autonomous execution
+- Telegram decision inbox
+- sequential review queue
+- /review
+- /review-next
+- /skip
 
-### Verification
+Market discovery:
 
-- unit and integration-style tests pass locally
-- compile check passes locally
+- market catalog browsing
+- opportunity scanning
+- draft opportunity proposals
+
+Background opportunity scanner:
+
+- automatic scan integration in Telegram runtime
+- configurable scan cadence
+
+Operator UI:
+
+- web authentication
+- session management
+- remember-browser tokens
+- session revocation
+
+Deployment improvements:
+
+- GitHub Actions deployment
+- SSH-based update workflow
+- systemd services
+
+---
+
+# v1.0.0
+
+Initial public release.
+
+## Features
+
+Core architecture:
+
+- policy-first trading assistant
+- semi-auto operator workflow
+- strict safety boundaries
+
+Proposal system:
+
+- proposal generation
+- composite policy engine
+- lifecycle management
+- approval revalidation
+
+Market integration:
+
+- Polymarket public API integration
+- order book snapshots
+- midpoint pricing
+- WebSocket updates
+
+Execution:
+
+- paper execution
+- outcome evaluation
+
+Operator interfaces:
+
+- CLI operator tooling
+- Telegram bot interface
+
+Infrastructure:
+
+- SQLite persistence
+- configuration system
+- audit logging

@@ -1,90 +1,133 @@
-# RUNBOOK.md
+# Runbook
 
-## Runbook для продакшена Trader Bot Polymarket
+Operational guide for running the trading assistant.
 
-### Если UI не открывается
+---
 
-Проверить процесс:
+# Services
 
-    ps aux | grep bot
+Telegram bot:
 
-Перезапустить сервис:
+trader-bot-telegram.service
 
-    systemctl restart trader-web
+Web UI:
 
-Проверить порт:
+trader-bot-ui.service
 
-    ss -ltnp | grep 8080
+Check status:
 
-------------------------------------------------------------------------
+systemctl --user status trader-bot-telegram
+systemctl --user status trader-bot-ui
 
-### Если verify падает
+Restart:
 
-Запустить:
+systemctl --user restart trader-bot-telegram
+systemctl --user restart trader-bot-ui
 
-    scripts/dev verify-fast
+---
 
-Если падает pytest:
+# Deployment
 
-    pytest -x
+Deployment is triggered on push to main.
 
-------------------------------------------------------------------------
+GitHub Actions:
 
-### Если Telegram бот не отвечает
+SSH → server
+run ~/bin/trader-bot-update
 
-Проверить:
+Manual deployment:
 
--   TELEGRAM_BOT_TOKEN
--   TELEGRAM_ALLOWED_CHAT_IDS
--   процесс telegram сервиса
+git pull
+pip install -e .
+systemctl --user restart trader-bot-telegram
+systemctl --user restart trader-bot-ui
 
-Перезапуск:
+---
 
-    systemctl restart trader-telegram
+# Authentication
 
-------------------------------------------------------------------------
+Set password:
 
-### Если UI пустой
+bot auth set-password
 
-Скорее всего нет данных.
+Sessions use:
 
-Запустить:
+HttpOnly cookies
+server-side sessions
 
-    bot demo seed
+Security page:
 
-------------------------------------------------------------------------
+/auth/security
 
-### Если пропали данные
+Allows revoking active sessions.
 
-Проверить:
+---
 
-    BOT_DATABASE_URL
+# Telegram Bot
 
-Возможно используется другая SQLite база.
+Start runtime:
 
-------------------------------------------------------------------------
+bot telegram serve
 
-### Если сломались migrations
+This enables:
 
-Проверить таблицу:
+- Telegram commands
+- alert delivery
+- background opportunity scanning
 
-    SELECT * FROM schema_version;
+---
 
-Если версия не соответствует --- перезапустить приложение.
+# Market Scanning
 
-------------------------------------------------------------------------
+Manual:
 
-### Backup базы
+bot alerts scan-opportunities
+bot markets draft-opportunities
 
-    cp bot.db bot.db.backup
+Telegram:
 
-Рекомендуется nightly backup.
+/scan-opportunities
 
-------------------------------------------------------------------------
+---
 
-### Если подозрение на компрометацию
+# Diagnostics
 
-1.  Отозвать все auth токены
-2.  Сменить пароль пользователя
-3.  Проверить audit events
-4.  Перезапустить сервисы
+Telegram:
+
+/diagnostics
+
+CLI:
+
+bot diagnostics
+
+---
+
+# Common Issues
+
+## Telegram bot not responding
+
+systemctl --user status trader-bot-telegram
+
+Logs:
+
+journalctl --user -u trader-bot-telegram
+
+## UI not accessible
+
+systemctl --user status trader-bot-ui
+
+SSH tunnel example:
+
+ssh -L 8080:localhost:8080 server
+
+---
+
+# Backup
+
+Important data stored in SQLite database.
+
+Recommended:
+
+- regular database backups
+- config backups
+- secrets backups
