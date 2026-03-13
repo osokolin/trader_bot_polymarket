@@ -227,7 +227,11 @@ def build_parser() -> argparse.ArgumentParser:
     alerts = subparsers.add_parser("alerts")
     alerts_sub = alerts.add_subparsers(dest="alerts_command")
     alerts_sub.add_parser("scan")
-    alerts_opportunities = alerts_sub.add_parser("scan-opportunities")
+    alerts_opportunities = alerts_sub.add_parser(
+        "scan-opportunities",
+        help="scan active markets and create conservative opportunity alerts",
+        description="Read-only market discovery alert pass over active markets.",
+    )
     alerts_opportunities.add_argument("--limit", type=int, default=200)
     alerts_list = alerts_sub.add_parser("list")
     alerts_list.add_argument("--watchlist-only", action="store_true")

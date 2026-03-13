@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import timedelta
+import re
 
 from bot.adapters.polymarket.models import GammaMarketSummary
 from bot.config.models import MarketOpportunityAlertsConfig, Settings
@@ -11,6 +12,24 @@ from bot.services.market_catalog import MarketCatalogService
 from bot.services.market_research import MarketResearchService
 from bot.services.operator_notifications import OperatorNotificationsService
 from bot.utils.time import utc_now
+
+SPORTS_CONTEXT_TERMS = (
+    "fifa",
+    "world cup",
+    "qualify",
+    "qualifying",
+    "match",
+    "tournament",
+    "champions league",
+    "premier league",
+    "nba",
+    "nfl",
+    "mlb",
+    "nhl",
+    "uefa",
+    "f1",
+    "formula 1",
+)
 
 
 @dataclass(slots=True)
@@ -164,6 +183,8 @@ class MarketOpportunityAlertService:
             reasons.append(f"category={market.category}")
 
         keyword_matches = self._keyword_matches(market, rules.tracked_keywords)
+        if keyword_matches and self._is_sports_like_context(market):
+            return reasons
         reasons.extend(f"keyword={keyword}" for keyword in keyword_matches)
         return reasons
 
@@ -177,6 +198,26 @@ class MarketOpportunityAlertService:
             if normalized and normalized in haystack:
                 matches.append(normalized)
         return matches
+
+    def _is_sports_like_context(self, market: GammaMarketSummary) -> bool:
+        haystack = " ".join(
+            part
+            for part in [
+                market.category,
+                market.question,
+                market.event_title or "",
+                market.slug or "",
+            ]
+            if part
+        ).lower()
+        normalized_haystack = re.sub(r"[^a-z0-9]+", " ", haystack)
+        for term in SPORTS_CONTEXT_TERMS:
+            normalized_term = re.sub(r"[^a-z0-9]+", " ", term.lower()).strip()
+            if not normalized_term:
+                continue
+            if re.search(rf"\b{re.escape(normalized_term)}\b", normalized_haystack):
+                return True
+        return False
 
     def _is_resolving_soon(self, market: GammaMarketSummary, rules: MarketOpportunityAlertsConfig) -> bool:
         if market.end_time is None or market.closed:
