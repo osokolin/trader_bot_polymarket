@@ -961,7 +961,6 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
         self.assertEqual(audits[0]["event_type"], "telegram_opportunity_scan")
         with self.assertRaisesRegex(RuntimeError, "cooling down"):
             self.operator_service.scan_opportunities(chat_id=777, limit=150)
-
     def test_new_opportunity_alert_is_delivered_once_via_poll_notifications(self) -> None:
         self.operator_service.poll_notifications()
         alert = self.notifications_service.create_market_opportunity_alert(
@@ -982,7 +981,6 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
         inbox = self.operator_service.list_inbox()
         self.assertEqual(len(inbox), 1)
         self.assertEqual(inbox[0].entity_id, alert.alert_id)
-
 
 if __name__ == "__main__":
     unittest.main()
