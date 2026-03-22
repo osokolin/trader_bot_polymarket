@@ -43,6 +43,7 @@ market snapshot + signal + probability
 - Private key handling is isolated behind `bot/security/trading_signer.py`; strategy, UI, CLI, and any future LLM helpers must not access signing secrets directly.
 - This milestone keeps real order submission intentionally disabled even when the gateway is enabled; the current execution path remains `ProposalLifecycleService -> ExecutionPipelineService -> ExecutionAdapter`.
 - Gateway-backed execution preview is an explicit side path only: `bot proposals execution-preview <proposal_id>` uses `ExecutionPreviewService` plus the optional gateway to prepare a structured non-live artifact for operator inspection, without creating intents or changing the default execution pipeline.
+- Gateway-backed previews are now also persisted as a small non-live audit trail in SQLite. They remain separate from `order_intents` and real execution artifacts, and exist only to measure proposal-to-gateway reconciliation quality over time.
 
 ## Bootstrap / Composition Root
 
@@ -52,6 +53,7 @@ market snapshot + signal + probability
 - `bot/cli/app.py` stays focused on argument parsing, command dispatch, and presenter output.
 - Demo/static UI rendering reuses the same bootstrap layer instead of hand-building a second service graph.
 - `ExecutionPreviewService` is a narrow validation service, not a second execution pipeline. It exists to compare proposal-layer terms against gateway-resolved market/token/quote data and return warnings or blocked validation errors.
+- `ExecutionPreviewRepository` persists those non-live preview artifacts for operator inspection, failed-preview review, warning review, and basic summary analytics.
 
 ## Decision Inbox Handlers
 

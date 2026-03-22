@@ -12,7 +12,9 @@ from bot.cli.presenter import (
     alert_lines,
     audit_lines,
     decision_review_lines,
+    execution_preview_history_lines,
     execution_preview_lines,
+    execution_preview_summary_stats_lines,
     event_catalog_lines,
     digest_lines,
     execution_evaluation_lines,
@@ -124,6 +126,9 @@ def build_parser() -> argparse.ArgumentParser:
     proposal_decision_review.add_argument("id")
     proposal_execution_preview = proposals_sub.add_parser("execution-preview")
     proposal_execution_preview.add_argument("id")
+    proposal_execution_preview_history = proposals_sub.add_parser("execution-preview-history")
+    proposal_execution_preview_history.add_argument("id")
+    proposal_execution_preview_history.add_argument("--limit", type=int, default=20)
     proposal_execution_evaluation = proposals_sub.add_parser("execution-evaluation")
     proposal_execution_evaluation.add_argument("id")
     proposal_research = proposals_sub.add_parser("research")
@@ -360,6 +365,14 @@ def build_parser() -> argparse.ArgumentParser:
     telegram = subparsers.add_parser("telegram")
     telegram_sub = telegram.add_subparsers(dest="telegram_command")
     telegram_sub.add_parser("serve")
+
+    execution_previews = subparsers.add_parser("execution-previews")
+    execution_previews_sub = execution_previews.add_subparsers(dest="execution_previews_command")
+    execution_previews_list = execution_previews_sub.add_parser("list")
+    execution_previews_list.add_argument("--scope", choices=["recent", "failed", "warnings"], default="recent")
+    execution_previews_list.add_argument("--proposal-id")
+    execution_previews_list.add_argument("--limit", type=int, default=20)
+    execution_previews_sub.add_parser("summary")
     return parser
 
 
@@ -493,6 +506,12 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("Execution preview service is not configured")
             _print_lines(execution_preview_lines(execution_preview_service.preview_proposal(args.id)))
             return 0
+        if args.command == "proposals" and args.proposals_command == "execution-preview-history":
+            if execution_preview_service is None:
+                raise ValueError("Execution preview service is not configured")
+            previews = execution_preview_service.list_preview_history_for_proposal(args.id, limit=args.limit)
+            _print_lines(execution_preview_history_lines("proposal", previews))
+            return 0
         if args.command == "proposals" and args.proposals_command == "execution-evaluation":
             _print_lines(execution_evaluation_lines(execution_evaluation_service.evaluate_proposal(args.id)))
             return 0
@@ -613,6 +632,28 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "intents" and args.intents_command == "latest-simulated":
             _print_lines(latest_execution_lines(execution_service.latest_simulated_execution_overall()))
+            return 0
+        if args.command == "execution-previews" and args.execution_previews_command == "list":
+            if execution_preview_service is None:
+                raise ValueError("Execution preview service is not configured")
+            if args.proposal_id:
+                previews = execution_preview_service.list_preview_history_for_proposal(args.proposal_id, limit=args.limit)
+                scope = "proposal"
+            elif args.scope == "failed":
+                previews = execution_preview_service.list_failed_previews(limit=args.limit)
+                scope = "failed"
+            elif args.scope == "warnings":
+                previews = execution_preview_service.list_warning_previews(limit=args.limit)
+                scope = "warnings"
+            else:
+                previews = execution_preview_service.list_recent_previews(limit=args.limit)
+                scope = "recent"
+            _print_lines(execution_preview_history_lines(scope, previews))
+            return 0
+        if args.command == "execution-previews" and args.execution_previews_command == "summary":
+            if execution_preview_service is None:
+                raise ValueError("Execution preview service is not configured")
+            _print_lines(execution_preview_summary_stats_lines(execution_preview_service.summarize_previews()))
             return 0
         if args.command == "safety" and args.safety_command == "inspect":
             snapshot = build_runtime_safety_snapshot(

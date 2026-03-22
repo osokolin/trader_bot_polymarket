@@ -36,6 +36,7 @@ class DatabaseMigrationsTest(unittest.TestCase):
         self.assertIn("web_users", tables)
         self.assertIn("web_sessions", tables)
         self.assertIn("web_remember_tokens", tables)
+        self.assertIn("execution_previews", tables)
         self.assertIn("schema_version", tables)
 
     def test_existing_baseline_schema_upgrades_to_versioned_schema(self) -> None:
