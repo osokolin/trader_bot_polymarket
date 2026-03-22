@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, UTC
 
-from bot.storage.migrations import v001_initial, v002_web_auth
+from bot.storage.migrations import v001_initial, v002_web_auth, v003_execution_previews
 
 
 class MigrationError(RuntimeError):
@@ -22,6 +22,11 @@ class MigrationStep:
 MIGRATIONS: tuple[MigrationStep, ...] = (
     MigrationStep(version=v001_initial.VERSION, name=v001_initial.NAME, apply=v001_initial.apply),
     MigrationStep(version=v002_web_auth.VERSION, name=v002_web_auth.NAME, apply=v002_web_auth.apply),
+    MigrationStep(
+        version=v003_execution_previews.VERSION,
+        name=v003_execution_previews.NAME,
+        apply=v003_execution_previews.apply,
+    ),
 )
 CURRENT_SCHEMA_VERSION = MIGRATIONS[-1].version if MIGRATIONS else 0
 

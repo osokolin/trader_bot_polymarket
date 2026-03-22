@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+from collections import Counter
 
 from bot.domain.enums import ExecutionPreviewStatus, ProposalStatus
-from bot.domain.models import ExecutionPreview, TradeProposal
+from bot.domain.models import ExecutionPreview, ExecutionPreviewSummary, TradeProposal
 from bot.integrations.polymarket_gateway import PolymarketGateway, PolymarketGatewayConfigError, PolymarketGatewayOrder
 from bot.services.audit_log import AuditLogService
 from bot.services.proposal_lifecycle import ProposalLifecycleService
+from bot.storage.execution_preview_repo import ExecutionPreviewRepository
 from bot.utils.ids import new_id
 from bot.utils.time import utc_now
 
@@ -20,10 +22,12 @@ class ExecutionPreviewService:
         self,
         proposal_service: ProposalLifecycleService,
         audit_log: AuditLogService,
+        preview_repository: ExecutionPreviewRepository,
         polymarket_gateway: PolymarketGateway | None = None,
     ) -> None:
         self.proposal_service = proposal_service
         self.audit_log = audit_log
+        self.preview_repository = preview_repository
         self.polymarket_gateway = polymarket_gateway
 
     def preview_proposal(self, proposal_id: str) -> ExecutionPreview:
@@ -133,7 +137,60 @@ class ExecutionPreviewService:
             created_at=created_at,
         )
         self._log_preview_result(preview)
+        self._persist_preview(preview)
         return preview
+
+    def list_recent_previews(self, limit: int = 20) -> list[ExecutionPreview]:
+        self._log_history_request("recent", limit=limit)
+        return self.preview_repository.list_recent(limit=limit)
+
+    def list_preview_history_for_proposal(self, proposal_id: str, limit: int = 20) -> list[ExecutionPreview]:
+        self._log_history_request("proposal", proposal_id=proposal_id, limit=limit)
+        return self.preview_repository.list_for_proposal(proposal_id, limit=limit)
+
+    def list_failed_previews(self, limit: int = 20) -> list[ExecutionPreview]:
+        self._log_history_request("failed", limit=limit)
+        return self.preview_repository.list_failed(limit=limit)
+
+    def list_warning_previews(self, limit: int = 20) -> list[ExecutionPreview]:
+        self._log_history_request("warnings", limit=limit)
+        return self.preview_repository.list_with_warnings(limit=limit)
+
+    def summarize_previews(self) -> ExecutionPreviewSummary:
+        self._log_history_request("summary")
+        items = self.preview_repository.list_all()
+        validation_error_counts: Counter[str] = Counter()
+        warning_counts: Counter[str] = Counter()
+        success_count = 0
+        warning_count = 0
+        failure_count = 0
+        for item in items:
+            if item.status == ExecutionPreviewStatus.READY:
+                success_count += 1
+            elif item.status == ExecutionPreviewStatus.READY_WITH_WARNINGS:
+                warning_count += 1
+            else:
+                failure_count += 1
+            validation_error_counts.update(item.validation_errors)
+            warning_counts.update(item.warnings)
+        summary = ExecutionPreviewSummary(
+            total_count=len(items),
+            success_count=success_count,
+            warning_count=warning_count,
+            failure_count=failure_count,
+            top_validation_errors=validation_error_counts.most_common(5),
+            top_warnings=warning_counts.most_common(5),
+        )
+        logger.info(
+            "execution_preview_summary %s",
+            {
+                "total_count": summary.total_count,
+                "success_count": summary.success_count,
+                "warning_count": summary.warning_count,
+                "failure_count": summary.failure_count,
+            },
+        )
+        return summary
 
     def _resolve_token(self, metadata, side: str) -> tuple[str | None, str | None, str | None]:
         token_id = metadata.outcome_token_ids.get(side)
@@ -186,3 +243,82 @@ class ExecutionPreviewService:
             logger.warning("execution_preview_prepared_with_warnings %s", payload)
         else:
             logger.info("execution_preview_prepared %s", payload)
+
+    def _persist_preview(self, preview: ExecutionPreview) -> None:
+        payload = {
+            "preview_id": preview.preview_id,
+            "proposal_id": preview.proposal_id,
+            "status": preview.status.value,
+            "warning_count": len(preview.warnings),
+            "validation_error_count": len(preview.validation_errors),
+            "dry_run": preview.dry_run,
+        }
+        try:
+            self.preview_repository.save(preview)
+        except Exception as exc:
+            failure_payload = {
+                "preview_id": preview.preview_id,
+                "proposal_id": preview.proposal_id,
+                "error_type": exc.__class__.__name__,
+            }
+            self._safe_audit_log(
+                "execution_preview_persist_failed",
+                preview.proposal_id,
+                "Execution preview persistence failed",
+                failure_payload,
+                created_at=preview.created_at,
+            )
+            logger.warning("execution_preview_persist_failed %s", failure_payload)
+            return
+        self._safe_audit_log(
+            "execution_preview_persisted",
+            preview.proposal_id,
+            "Execution preview persisted",
+            payload,
+            created_at=preview.created_at,
+        )
+        logger.info("execution_preview_persisted %s", payload)
+
+    def _log_history_request(self, scope: str, *, proposal_id: str | None = None, limit: int | None = None) -> None:
+        created_at = utc_now()
+        entity_id = proposal_id or "execution_preview_history"
+        payload: dict[str, object] = {"scope": scope}
+        if proposal_id is not None:
+            payload["proposal_id"] = proposal_id
+        if limit is not None:
+            payload["limit"] = limit
+        self._safe_audit_log(
+            "execution_preview_history_requested",
+            entity_id,
+            "Execution preview history requested",
+            payload,
+            created_at=created_at,
+        )
+        logger.info("execution_preview_history_requested %s", payload)
+
+    def _safe_audit_log(
+        self,
+        event_type: str,
+        entity_id: str,
+        message: str,
+        payload: dict[str, object],
+        *,
+        created_at,
+    ) -> None:
+        try:
+            self.audit_log.log(
+                event_type,
+                entity_id,
+                message,
+                payload,
+                created_at=created_at,
+            )
+        except Exception as exc:
+            logger.warning(
+                "execution_preview_audit_log_failed %s",
+                {
+                    "event_type": event_type,
+                    "entity_id": entity_id,
+                    "error_type": exc.__class__.__name__,
+                },
+            )

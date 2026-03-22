@@ -91,6 +91,9 @@ bot proposals list --scope active
 bot proposals latest-approved
 bot proposals decision-review <proposal_id>
 bot proposals execution-preview <proposal_id>
+bot proposals execution-preview-history <proposal_id> --limit 20
+bot execution-previews list --scope failed --limit 20
+bot execution-previews summary
 bot intents list --scope terminal
 bot intents latest-simulated
 bot alerts list --state open
@@ -236,6 +239,7 @@ bot proposals execution-preview <proposal_id>
 This command:
 - uses the optional `PolymarketGateway` to resolve market metadata and quote assumptions
 - returns a structured preview artifact for operator inspection
+- persists the preview as a non-live audit record for later inspection
 - stays `dry_run=True`
 - does not create an order intent
 - does not submit an order
@@ -244,6 +248,22 @@ This command:
 The preview is intended to answer whether our proposal layer and the gateway
 agree on market id, token/outcome mapping, side, price, and size. It is a
 validation artifact for future redesign work, not a live execution path.
+
+Inspection commands:
+
+```bash
+bot proposals execution-preview-history <proposal_id> --limit 20
+bot execution-previews list --scope recent --limit 20
+bot execution-previews list --scope failed --limit 20
+bot execution-previews list --scope warnings --limit 20
+bot execution-previews summary
+```
+
+These commands let operators answer:
+- what happened for a specific proposal
+- which previews are failing most recently
+- which previews succeeded with warnings
+- how many previews are succeeding, warning, or failing overall
 ## UI Screenshots
 
 ![Dashboard Home](./docs/images/ui-dashboard-home.png)

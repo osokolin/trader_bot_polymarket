@@ -72,6 +72,7 @@
 - `dry_run` должен быть `True`
 - preview может иметь `ready`, `ready_with_warnings` или `blocked`
 - `blocked` означает, что gateway не смог безопасно согласовать market/token/side/price/size
+- результат сохраняется в persisted preview audit trail
 
 Важно:
 
@@ -79,6 +80,13 @@
 - preview не отправляет ордер
 - preview не меняет `ManualExecutionGuard`
 - live submission по-прежнему intentionally disabled
+
+Посмотреть историю и сводку:
+
+    bot proposals execution-preview-history <proposal_id> --limit 20
+    bot execution-previews list --scope failed --limit 20
+    bot execution-previews list --scope warnings --limit 20
+    bot execution-previews summary
 
 ------------------------------------------------------------------------
 

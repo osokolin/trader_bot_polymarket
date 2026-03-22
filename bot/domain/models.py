@@ -246,6 +246,16 @@ class ExecutionPreview:
 
 
 @dataclass(slots=True)
+class ExecutionPreviewSummary:
+    total_count: int
+    success_count: int
+    warning_count: int
+    failure_count: int
+    top_validation_errors: list[tuple[str, int]]
+    top_warnings: list[tuple[str, int]]
+
+
+@dataclass(slots=True)
 class SimulatedExecution:
     execution_id: str
     intent_id: str
