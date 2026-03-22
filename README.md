@@ -13,6 +13,7 @@ The repository currently includes:
 - proposal lifecycle with approval, edits, rejection, TTL expiry, and revalidation
 - public Polymarket Gamma/CLOB market-data adapters plus market snapshot cache
 - persisted order intents and simulation-only execution pipeline
+- optional Polymarket gateway boundary for controlled metadata discovery and future execution plumbing
 - paper execution, decision review, execution evaluation, outcome analysis
 - CLI operator tooling
 - lightweight operator dashboard UI
@@ -198,6 +199,29 @@ Canonical production update flow:
 4. restart `trader-bot-telegram.service` and `trader-bot-ui.service`
 
 For the full production guide, see [docs/DEPLOY.md](./docs/DEPLOY.md).
+
+## Optional Polymarket Gateway
+
+This repository can now build an optional `PolymarketGateway` slice, but the
+boundary remains strict:
+
+- our strategy, scoring, market binding, policy, review, calibration, and dry-run flow remain the source of truth
+- the gateway is an external adapter surface for market metadata discovery and execution plumbing only
+- the gateway is config-gated and disabled by default
+- private key usage is isolated to `bot/security/trading_signer.py`
+- no LLM, prompt, or autonomous agent path is introduced into execution
+- live order submission is intentionally not enabled in this milestone
+
+The new config block lives in [`config/base.yaml`](./config/base.yaml):
+
+- `polymarket_gateway.enable_polymarket_gateway`
+- `polymarket_gateway.dry_run`
+- `polymarket_gateway.gamma_base_url`
+- `polymarket_gateway.clob_base_url`
+- `polymarket_gateway.*_env_var`
+
+Secret material stays in environment variables only; no private key or API
+credentials are stored in YAML.
 ## UI Screenshots
 
 ![Dashboard Home](./docs/images/ui-dashboard-home.png)

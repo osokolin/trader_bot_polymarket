@@ -15,6 +15,7 @@ from bot.config.models import (
     ExitRulesConfig,
     MarketFiltersConfig,
     MarketOpportunityAlertsConfig,
+    PolymarketGatewayConfig,
     PositionLimitsConfig,
     SafetyConfig,
     Settings,
@@ -137,6 +138,22 @@ def _validate_settings(settings: Settings) -> None:
         raise ConfigError("market_opportunity_alerts.resolving_soon_days must be >= 1")
     if settings.market_opportunity_alerts.poll_interval_seconds < 1:
         raise ConfigError("market_opportunity_alerts.poll_interval_seconds must be >= 1")
+    if not settings.polymarket_gateway.gamma_base_url:
+        raise ConfigError("polymarket_gateway.gamma_base_url must not be empty")
+    if not settings.polymarket_gateway.clob_base_url:
+        raise ConfigError("polymarket_gateway.clob_base_url must not be empty")
+    for field_name in (
+        "private_key_env_var",
+        "api_key_env_var",
+        "api_secret_env_var",
+        "api_passphrase_env_var",
+    ):
+        if not getattr(settings.polymarket_gateway, field_name):
+            raise ConfigError(f"polymarket_gateway.{field_name} must not be empty")
+    if settings.polymarket_gateway.allow_live_order_submission and settings.polymarket_gateway.dry_run:
+        raise ConfigError("polymarket_gateway.allow_live_order_submission cannot be true while dry_run is enabled")
+    if settings.mode == BotMode.SEMI_AUTO and settings.polymarket_gateway.allow_live_order_submission:
+        raise ConfigError("semi_auto mode forbids polymarket_gateway.allow_live_order_submission = true")
 
 
 def _to_settings(
@@ -166,6 +183,7 @@ def _to_settings(
         whitelist=WhitelistConfig(**whitelist),
         blacklist=BlacklistConfig(**blacklist),
         market_opportunity_alerts=MarketOpportunityAlertsConfig(**_require(data, "market_opportunity_alerts")),
+        polymarket_gateway=PolymarketGatewayConfig(**_require(data, "polymarket_gateway")),
     )
     _validate_settings(settings)
     return settings

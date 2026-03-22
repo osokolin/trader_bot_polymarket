@@ -44,6 +44,22 @@
 
 ------------------------------------------------------------------------
 
+### Если включили Polymarket gateway и он не поднимается
+
+Проверить:
+
+- `polymarket_gateway.enable_polymarket_gateway`
+- `polymarket_gateway.dry_run`
+- env vars из блока gateway (`POLYMARKET_PRIVATE_KEY`, `POLYMARKET_API_KEY`, `POLYMARKET_API_SECRET`, `POLYMARKET_API_PASSPHRASE`)
+
+Важно:
+
+- в текущем milestone gateway нужен для controlled metadata / execution plumbing boundary
+- live order submission по-прежнему intentionally disabled
+- отсутствие credentials должно fail closed и не должно менять основной semi_auto flow
+
+------------------------------------------------------------------------
+
 ### Если UI пустой
 
 Скорее всего нет данных.

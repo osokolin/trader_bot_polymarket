@@ -10,6 +10,8 @@ from bot.adapters.polymarket.trading import PaperExecutionAdapter, SemiAutoExecu
 from bot.adapters.polymarket.websocket_market import PublicMarketWebSocketClient
 from bot.config.loader import load_settings
 from bot.config.models import Settings
+from bot.integrations.polymarket_gateway import PolymarketGateway
+from bot.security.trading_signer import TradingSigner
 from bot.services.analytics import AnalyticsService
 from bot.services.approval_snapshot_provider import PolymarketApprovalSnapshotProvider
 from bot.services.audit_log import AuditLogService
@@ -80,6 +82,7 @@ class AppContainer:
     connection: object
     polymarket_client: PolymarketClient | None
     gamma_client: GammaApiClient | None
+    polymarket_gateway: PolymarketGateway | None
     market_data_service: LiveMarketDataService | None
     realtime_market_feed_service: RealtimeMarketFeedService | None
     market_catalog_service: MarketCatalogService | None
@@ -129,6 +132,8 @@ class AppContainer:
             self.gamma_client.close()
         if self.polymarket_client is not None:
             self.polymarket_client.close()
+        if self.polymarket_gateway is not None:
+            self.polymarket_gateway.close()
 
 
 def load_app_settings(config_dir: Path, profile: str = "balanced") -> Settings:
@@ -193,6 +198,7 @@ def build_app_container(
     market_research_service: MarketResearchService | None = None
     market_opportunity_alert_service: MarketOpportunityAlertService | None = None
     market_opportunity_scanner: MarketOpportunityScannerService | None = None
+    polymarket_gateway: PolymarketGateway | None = None
     diagnostics_service: PolymarketDiagnosticsService | None = None
     opportunity_bridge_service: OpportunityProposalBridgeService | None = None
     decision_inbox_service: DecisionInboxService | None = None
@@ -200,11 +206,16 @@ def build_app_container(
     web_auth_service: WebAuthService | None = None
 
     if include_market_runtime:
-        polymarket_client = PolymarketClient()
-        gamma_client = GammaApiClient()
+        polymarket_client = PolymarketClient(base_url=settings.polymarket_gateway.clob_base_url)
+        gamma_client = GammaApiClient(base_url=settings.polymarket_gateway.gamma_base_url)
         market_data_service = market_data_service_cls(
             PolymarketMarketMetadataAdapter(gamma_client),
-            PolymarketOrderBookAdapter(ClobMarketDataClient(http_client=polymarket_client.http_client)),
+            PolymarketOrderBookAdapter(
+                ClobMarketDataClient(
+                    base_url=settings.polymarket_gateway.clob_base_url,
+                    http_client=polymarket_client.http_client,
+                )
+            ),
             MarketDataSnapshotRepository(connection),
         )
         realtime_market_feed_service = realtime_market_feed_service_cls(
@@ -219,8 +230,24 @@ def build_app_container(
         )
         diagnostics_service = diagnostics_service_cls(
             gamma_client=gamma_client,
-            clob_client=ClobMarketDataClient(http_client=polymarket_client.http_client),
+            clob_client=ClobMarketDataClient(
+                base_url=settings.polymarket_gateway.clob_base_url,
+                http_client=polymarket_client.http_client,
+            ),
             websocket_client=PublicMarketWebSocketClient(),
+        )
+
+    if settings.polymarket_gateway.enable_polymarket_gateway:
+        gateway_gamma_client = GammaApiClient(base_url=settings.polymarket_gateway.gamma_base_url)
+        gateway_clob_client = ClobMarketDataClient(base_url=settings.polymarket_gateway.clob_base_url)
+        gateway_signer = TradingSigner.from_environment(settings.polymarket_gateway)
+        if not settings.polymarket_gateway.dry_run and settings.polymarket_gateway.allow_live_order_submission:
+            gateway_signer.validate_for_live_submission()
+        polymarket_gateway = PolymarketGateway(
+            config=settings.polymarket_gateway,
+            signer=gateway_signer,
+            gamma_client=gateway_gamma_client,
+            clob_client=gateway_clob_client,
         )
 
     proposal_service = ProposalLifecycleService(
@@ -334,6 +361,7 @@ def build_app_container(
         connection=connection,
         polymarket_client=polymarket_client,
         gamma_client=gamma_client,
+        polymarket_gateway=polymarket_gateway,
         market_data_service=market_data_service,
         realtime_market_feed_service=realtime_market_feed_service,
         market_catalog_service=market_catalog_service,
