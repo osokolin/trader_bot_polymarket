@@ -90,6 +90,7 @@ Common commands:
 bot proposals list --scope active
 bot proposals latest-approved
 bot proposals decision-review <proposal_id>
+bot proposals execution-preview <proposal_id>
 bot intents list --scope terminal
 bot intents latest-simulated
 bot alerts list --state open
@@ -222,6 +223,27 @@ The new config block lives in [`config/base.yaml`](./config/base.yaml):
 
 Secret material stays in environment variables only; no private key or API
 credentials are stored in YAML.
+
+### Gateway-Backed Execution Preview
+
+The gateway now supports an explicit non-live preparation path for integration
+validation:
+
+```bash
+bot proposals execution-preview <proposal_id>
+```
+
+This command:
+- uses the optional `PolymarketGateway` to resolve market metadata and quote assumptions
+- returns a structured preview artifact for operator inspection
+- stays `dry_run=True`
+- does not create an order intent
+- does not submit an order
+- does not weaken `ManualExecutionGuard`
+
+The preview is intended to answer whether our proposal layer and the gateway
+agree on market id, token/outcome mapping, side, price, and size. It is a
+validation artifact for future redesign work, not a live execution path.
 ## UI Screenshots
 
 ![Dashboard Home](./docs/images/ui-dashboard-home.png)

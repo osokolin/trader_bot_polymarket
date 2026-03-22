@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import json
 
 from bot.adapters.polymarket.clob_client import ClobMarketDataClient, PolymarketOrderBookAdapter
 from bot.adapters.polymarket.gamma_client import GammaApiClient, PolymarketMarketMetadataAdapter
@@ -35,6 +36,9 @@ class PolymarketGatewayMetadata:
     asset_id: str
     slug: str | None
     event_title: str | None
+    event_id: str | None
+    condition_id: str | None
+    outcome_token_ids: dict[str, str]
     gamma_payload: dict[str, object]
 
 
@@ -144,6 +148,9 @@ class PolymarketGateway:
             asset_id=metadata.asset_id,
             slug=None if payload.get("slug") is None else str(payload.get("slug")),
             event_title=None if payload.get("event") is None else self._event_title(payload.get("event")),
+            event_id=metadata.market.event_id,
+            condition_id=None if payload.get("conditionId") is None else str(payload.get("conditionId")),
+            outcome_token_ids=self._extract_outcome_token_ids(payload),
             gamma_payload=payload,
         )
 
@@ -249,4 +256,41 @@ class PolymarketGateway:
             title = event_payload.get("title")
             if title is not None:
                 return str(title)
+        return None
+
+    def _extract_outcome_token_ids(self, payload: dict[str, object]) -> dict[str, str]:
+        mapped: dict[str, str] = {}
+        tokens = payload.get("tokens")
+        if isinstance(tokens, list):
+            for token in tokens:
+                if not isinstance(token, dict):
+                    continue
+                label = token.get("outcome") or token.get("name") or token.get("title") or token.get("side")
+                token_id = (
+                    token.get("token_id")
+                    or token.get("asset_id")
+                    or token.get("clobTokenId")
+                    or token.get("clob_token_id")
+                )
+                if label is not None and token_id is not None:
+                    mapped[str(label).strip().lower()] = str(token_id)
+        outcomes = self._parse_json_list(payload.get("outcomes"))
+        token_ids = self._parse_json_list(payload.get("clobTokenIds"))
+        if outcomes is not None and token_ids is not None and len(outcomes) == len(token_ids):
+            for label, token_id in zip(outcomes, token_ids):
+                mapped.setdefault(str(label).strip().lower(), str(token_id))
+        return mapped
+
+    def _parse_json_list(self, value: object) -> list[object] | None:
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                try:
+                    parsed = json.loads(stripped)
+                except ValueError:
+                    return None
+                if isinstance(parsed, list):
+                    return parsed
         return None

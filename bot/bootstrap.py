@@ -18,6 +18,7 @@ from bot.services.audit_log import AuditLogService
 from bot.services.decision_inbox import DecisionInboxService
 from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_evaluation import ExecutionEvaluationService
+from bot.services.execution_preview import ExecutionPreviewService
 from bot.services.execution_pipeline import ExecutionPipelineService
 from bot.services.inbox_handlers import build_default_inbox_handlers
 from bot.services.market_catalog import MarketCatalogService
@@ -93,6 +94,7 @@ class AppContainer:
     opportunity_bridge_service: OpportunityProposalBridgeService | None
     notifications_service: OperatorNotificationsService
     execution_service: ExecutionPipelineService
+    execution_preview_service: ExecutionPreviewService
     analytics_service: AnalyticsService
     decision_review_service: DecisionReviewService
     decision_inbox_service: DecisionInboxService | None
@@ -285,6 +287,11 @@ def build_app_container(
         execution_service,
         execution_evaluation_repository,
     )
+    execution_preview_service = ExecutionPreviewService(
+        proposal_service=proposal_service,
+        audit_log=audit_log,
+        polymarket_gateway=polymarket_gateway,
+    )
     outcome_analysis_service = OutcomeAnalysisService(
         proposal_service,
         decision_review_repository,
@@ -372,6 +379,7 @@ def build_app_container(
         opportunity_bridge_service=opportunity_bridge_service,
         notifications_service=notifications_service,
         execution_service=execution_service,
+        execution_preview_service=execution_preview_service,
         analytics_service=analytics_service,
         decision_review_service=decision_review_service,
         decision_inbox_service=decision_inbox_service,

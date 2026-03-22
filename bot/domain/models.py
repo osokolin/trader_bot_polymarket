@@ -8,6 +8,7 @@ from bot.domain.enums import (
     AlertState,
     AlertSeverity,
     AlertType,
+    ExecutionPreviewStatus,
     IntentStatus,
     OperatorActionEntityType,
     OperatorActionRequestStatus,
@@ -219,6 +220,29 @@ class OrderIntent:
     updated_at: datetime
     reason: str
     superseded_by_intent_id: str | None = None
+
+
+@dataclass(slots=True)
+class ExecutionPreview:
+    preview_id: str
+    proposal_id: str
+    source: str
+    dry_run: bool
+    market_id: str
+    event_id: str | None
+    condition_id: str | None
+    token_id: str | None
+    side: str
+    intended_price: float
+    quoted_price: float | None
+    intended_size_usd: float
+    normalized_size_usd: float | None
+    estimated_shares: float | None
+    status: ExecutionPreviewStatus
+    warnings: list[str]
+    validation_errors: list[str]
+    preview_payload: dict[str, object]
+    created_at: datetime
 
 
 @dataclass(slots=True)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections import Counter
 
-from bot.domain.enums import IntentStatus, ProposalStatus
+from bot.domain.enums import ExecutionPreviewStatus, IntentStatus, ProposalStatus
 
 
 PROPOSAL_STATUS_HELP = {
@@ -30,6 +30,12 @@ INTENT_STATUS_HELP = {
     IntentStatus.SIMULATED_FILLED: "Paper execution simulated a full fill.",
     IntentStatus.SIMULATED_EXPIRED: "Paper execution simulated a partial or resting order that expired before completion.",
     IntentStatus.SIMULATED_CANCELLED: "Paper execution simulated an operator cancellation before the order fully filled.",
+}
+
+EXECUTION_PREVIEW_STATUS_HELP = {
+    ExecutionPreviewStatus.READY: "Gateway preview reconciled proposal and market metadata without warnings.",
+    ExecutionPreviewStatus.READY_WITH_WARNINGS: "Gateway preview succeeded, but reconciliation produced warnings worth operator review.",
+    ExecutionPreviewStatus.BLOCKED: "Gateway preview could not prepare a safe non-live artifact.",
 }
 
 
@@ -62,6 +68,10 @@ def proposal_status_help(proposal) -> str:
 
 def intent_status_help(intent) -> str:
     return INTENT_STATUS_HELP.get(intent.status, "Status has no dedicated operator help text yet.")
+
+
+def execution_preview_status_help(preview) -> str:
+    return EXECUTION_PREVIEW_STATUS_HELP.get(preview.status, "Preview status has no dedicated operator help text yet.")
 
 
 def format_policy_reasons(proposal) -> str:
@@ -203,6 +213,35 @@ def execution_evaluation_lines(evaluation) -> list[str]:
             ("timeline_event_count", evaluation.timeline_event_count),
             ("summary", evaluation.summary),
             ("created_at", evaluation.created_at.isoformat()),
+        ]
+    )
+
+
+def execution_preview_lines(preview) -> list[str]:
+    return kv_lines(
+        [
+            ("preview_id", preview.preview_id),
+            ("proposal_id", preview.proposal_id),
+            ("source", preview.source),
+            ("dry_run", preview.dry_run),
+            ("status", preview.status.value),
+            ("status_help", execution_preview_status_help(preview)),
+            ("market_id", preview.market_id),
+            ("event_id", preview.event_id or "-"),
+            ("condition_id", preview.condition_id or "-"),
+            ("token_id", preview.token_id or "-"),
+            ("side", preview.side),
+            ("intended_price", f"{preview.intended_price:.4f}"),
+            ("quoted_price", "-" if preview.quoted_price is None else f"{preview.quoted_price:.4f}"),
+            ("intended_size_usd", f"{preview.intended_size_usd:.2f}"),
+            ("normalized_size_usd", "-" if preview.normalized_size_usd is None else f"{preview.normalized_size_usd:.2f}"),
+            ("estimated_shares", "-" if preview.estimated_shares is None else f"{preview.estimated_shares:.4f}"),
+            ("warning_count", len(preview.warnings)),
+            ("validation_error_count", len(preview.validation_errors)),
+            ("warnings", json.dumps(preview.warnings, ensure_ascii=True)),
+            ("validation_errors", json.dumps(preview.validation_errors, ensure_ascii=True)),
+            ("preview_payload", json.dumps(preview.preview_payload, sort_keys=True)),
+            ("created_at", preview.created_at.isoformat()),
         ]
     )
 

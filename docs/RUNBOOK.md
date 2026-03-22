@@ -60,6 +60,28 @@
 
 ------------------------------------------------------------------------
 
+### Если нужен gateway-backed execution preview
+
+Запустить:
+
+    bot proposals execution-preview <proposal_id>
+
+Что ожидать:
+
+- это строго non-live preview artifact
+- `dry_run` должен быть `True`
+- preview может иметь `ready`, `ready_with_warnings` или `blocked`
+- `blocked` означает, что gateway не смог безопасно согласовать market/token/side/price/size
+
+Важно:
+
+- preview не создает order intent
+- preview не отправляет ордер
+- preview не меняет `ManualExecutionGuard`
+- live submission по-прежнему intentionally disabled
+
+------------------------------------------------------------------------
+
 ### Если UI пустой
 
 Скорее всего нет данных.
