@@ -42,6 +42,7 @@ from bot.storage.repositories import (
     AlertRepository,
     AuditRepository,
     DecisionReviewRepository,
+    ExecutionPreviewRepository,
     ExecutionEvaluationRepository,
     MarketDataSnapshotRepository,
     OperatorActionRequestRepository,
@@ -188,6 +189,7 @@ def build_app_container(
     watchlist_repository = WatchlistRepository(connection)
     decision_review_repository = DecisionReviewRepository(connection)
     execution_evaluation_repository = ExecutionEvaluationRepository(connection)
+    execution_preview_repository = ExecutionPreviewRepository(connection)
     outcome_analysis_repository = OutcomeAnalysisRepository(connection)
     saved_view_repository = SavedViewRepository(connection)
     position_repository = PositionRepository(connection)
@@ -290,6 +292,7 @@ def build_app_container(
     execution_preview_service = ExecutionPreviewService(
         proposal_service=proposal_service,
         audit_log=audit_log,
+        preview_repository=execution_preview_repository,
         polymarket_gateway=polymarket_gateway,
     )
     outcome_analysis_service = OutcomeAnalysisService(

@@ -246,6 +246,39 @@ def execution_preview_lines(preview) -> list[str]:
     )
 
 
+def execution_preview_summary_line(preview) -> str:
+    return (
+        f"{preview.created_at.isoformat()} | {preview.preview_id} | {preview.status.value} | "
+        f"proposal={preview.proposal_id} | market={preview.market_id} | side={preview.side} | "
+        f"intended={preview.intended_price:.4f} | quoted={'-' if preview.quoted_price is None else f'{preview.quoted_price:.4f}'} | "
+        f"size={preview.intended_size_usd:.2f} | warnings={len(preview.warnings)} | errors={len(preview.validation_errors)}"
+    )
+
+
+def execution_preview_history_lines(scope: str, previews) -> list[str]:
+    lines = [
+        f"preview_scope: {scope}",
+        f"preview_count: {len(previews)}",
+        f"status_summary: {status_summary(previews)}",
+    ]
+    for preview in previews:
+        lines.append(execution_preview_summary_line(preview))
+    return lines
+
+
+def execution_preview_summary_stats_lines(summary) -> list[str]:
+    return kv_lines(
+        [
+            ("total_previews", summary.total_count),
+            ("success_count", summary.success_count),
+            ("warning_count", summary.warning_count),
+            ("failure_count", summary.failure_count),
+            ("top_validation_errors", json.dumps(summary.top_validation_errors, ensure_ascii=True)),
+            ("top_warnings", json.dumps(summary.top_warnings, ensure_ascii=True)),
+        ]
+    )
+
+
 def outcome_analysis_lines(snapshot) -> list[str]:
     lines = [
         f"analysis_scope: {snapshot.scope}",
