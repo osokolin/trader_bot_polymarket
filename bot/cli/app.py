@@ -12,6 +12,7 @@ from bot.cli.presenter import (
     alert_lines,
     audit_lines,
     decision_review_lines,
+    execution_preview_lines,
     event_catalog_lines,
     digest_lines,
     execution_evaluation_lines,
@@ -121,6 +122,8 @@ def build_parser() -> argparse.ArgumentParser:
     proposal_compare.add_argument("id")
     proposal_decision_review = proposals_sub.add_parser("decision-review")
     proposal_decision_review.add_argument("id")
+    proposal_execution_preview = proposals_sub.add_parser("execution-preview")
+    proposal_execution_preview.add_argument("id")
     proposal_execution_evaluation = proposals_sub.add_parser("execution-evaluation")
     proposal_execution_evaluation.add_argument("id")
     proposal_research = proposals_sub.add_parser("research")
@@ -397,6 +400,7 @@ def main(argv: list[str] | None = None) -> int:
         opportunity_bridge_service = container.opportunity_bridge_service
         notifications_service = container.notifications_service
         execution_service = container.execution_service
+        execution_preview_service = getattr(container, "execution_preview_service", None)
         analytics_service = container.analytics_service
         decision_review_service = container.decision_review_service
         execution_evaluation_service = container.execution_evaluation_service
@@ -483,6 +487,11 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "proposals" and args.proposals_command == "decision-review":
             _print_lines(decision_review_lines(decision_review_service.create_for_proposal(args.id)))
+            return 0
+        if args.command == "proposals" and args.proposals_command == "execution-preview":
+            if execution_preview_service is None:
+                raise ValueError("Execution preview service is not configured")
+            _print_lines(execution_preview_lines(execution_preview_service.preview_proposal(args.id)))
             return 0
         if args.command == "proposals" and args.proposals_command == "execution-evaluation":
             _print_lines(execution_evaluation_lines(execution_evaluation_service.evaluate_proposal(args.id)))

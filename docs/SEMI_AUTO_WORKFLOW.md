@@ -41,6 +41,7 @@ At the current milestone depth:
 35. `bot telegram serve` exposes an allowlisted Telegram operator inbox with concise status/diagnostics/scanner/proposal/alert commands, notification polling for new draft proposals, new open alerts, and diagnostics failures, plus safe proposal actions for approve/reject/cancel/request-analysis through the existing lifecycle services.
 36. A persisted Decision Inbox now tracks operator action requests for proposal review, alert notifications, and diagnostics issues; Telegram exposes those requests through `/inbox`, `/request <id>`, and request-scoped action cards that resolve through the decision inbox service before delegating to lifecycle or alert services.
 37. Telegram review sessions can now use `/review` and `/review-next` to process open decision requests sequentially in created order, with request-safe actions and skip support that keep execution boundaries unchanged.
+38. `bot proposals execution-preview <proposal_id>` provides an explicit gateway-backed non-live preparation path for approved or manually reviewable proposals. It produces a structured preview artifact for market/token/side/price/size reconciliation, but it does not create intents, submit orders, or alter `ManualExecutionGuard`.
 
 
 Execution adapters remain non-autonomous; approval currently stops at a verified `approved` state.

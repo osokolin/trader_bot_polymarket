@@ -42,6 +42,7 @@ market snapshot + signal + probability
 - The optional `PolymarketGateway` is disabled by default and does not replace the existing strategy, market binding, proposal review, or calibration architecture.
 - Private key handling is isolated behind `bot/security/trading_signer.py`; strategy, UI, CLI, and any future LLM helpers must not access signing secrets directly.
 - This milestone keeps real order submission intentionally disabled even when the gateway is enabled; the current execution path remains `ProposalLifecycleService -> ExecutionPipelineService -> ExecutionAdapter`.
+- Gateway-backed execution preview is an explicit side path only: `bot proposals execution-preview <proposal_id>` uses `ExecutionPreviewService` plus the optional gateway to prepare a structured non-live artifact for operator inspection, without creating intents or changing the default execution pipeline.
 
 ## Bootstrap / Composition Root
 
@@ -50,6 +51,7 @@ market snapshot + signal + probability
 - `DiagnosticsBootstrap` provides a smaller read-only composition root for Polymarket diagnostics without creating the full application graph.
 - `bot/cli/app.py` stays focused on argument parsing, command dispatch, and presenter output.
 - Demo/static UI rendering reuses the same bootstrap layer instead of hand-building a second service graph.
+- `ExecutionPreviewService` is a narrow validation service, not a second execution pipeline. It exists to compare proposal-layer terms against gateway-resolved market/token/quote data and return warnings or blocked validation errors.
 
 ## Decision Inbox Handlers
 

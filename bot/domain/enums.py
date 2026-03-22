@@ -69,6 +69,12 @@ class IntentStatus(str, Enum):
         }
 
 
+class ExecutionPreviewStatus(str, Enum):
+    READY = "ready"
+    READY_WITH_WARNINGS = "ready_with_warnings"
+    BLOCKED = "blocked"
+
+
 class TradeAction(str, Enum):
     BUY = "buy"
     SELL = "sell"
