@@ -25,7 +25,9 @@ market snapshot + signal + probability
 - `bot/storage`: SQLite schema bootstrap and repositories, split by bounded storage area with `repositories.py` kept as a thin compatibility facade
 - `bot/policies`: policy layers and composite policy
 - `bot/services`: sizing, proposal generation, lifecycle transitions, audit logging, approval-time snapshot wiring, and cached live market-data retrieval
-- `bot/adapters/polymarket`: Gamma metadata, public CLOB `/book` + `/midpoint` + `/price`, public market WebSocket, and execution abstractions
+- `bot/adapters/polymarket`: Gamma metadata, public CLOB `/book` + `/midpoint` + `/price`, public market WebSocket, and legacy execution abstractions
+- `bot/integrations`: optional external provider boundaries such as `polymarket_gateway.py`
+- `bot/security`: isolated secret-handling boundaries such as `trading_signer.py`
 - `bot/cli`: CLI skeleton for scan/proposal/position/safety/config commands
 
 ## Current boundaries
@@ -37,6 +39,9 @@ market snapshot + signal + probability
 - Approve revalidation uses fresh public market metadata and public CLOB `/book` + `/midpoint` pricing when a snapshot provider is configured, while `/price` is stored as explicit reference-price metadata.
 - Public market-data failures are fail-closed: stale, malformed, or unavailable market data blocks approval.
 - Live execution remains disabled; no authenticated trading, order posting, or user channel support is present.
+- The optional `PolymarketGateway` is disabled by default and does not replace the existing strategy, market binding, proposal review, or calibration architecture.
+- Private key handling is isolated behind `bot/security/trading_signer.py`; strategy, UI, CLI, and any future LLM helpers must not access signing secrets directly.
+- This milestone keeps real order submission intentionally disabled even when the gateway is enabled; the current execution path remains `ProposalLifecycleService -> ExecutionPipelineService -> ExecutionAdapter`.
 
 ## Bootstrap / Composition Root
 

@@ -55,6 +55,24 @@ class ConfigLoaderTest(unittest.TestCase):
             with self.assertRaises(ConfigError):
                 load_settings(tmp_path)
 
+    def test_polymarket_gateway_is_disabled_by_default(self) -> None:
+        settings = load_settings(Path("config"))
+        self.assertFalse(settings.polymarket_gateway.enable_polymarket_gateway)
+        self.assertTrue(settings.polymarket_gateway.dry_run)
+
+    def test_polymarket_gateway_live_submission_is_rejected_in_semi_auto(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            for file_name in ("balanced.yaml", "sources.yaml", "whitelist.yaml", "blacklist.yaml"):
+                (tmp_path / file_name).write_text((Path("config") / file_name).read_text())
+            invalid = (Path("config") / "base.yaml").read_text().replace(
+                "allow_live_order_submission: false",
+                "allow_live_order_submission: true",
+            )
+            (tmp_path / "base.yaml").write_text(invalid)
+            with self.assertRaises(ConfigError):
+                load_settings(tmp_path)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -105,6 +105,19 @@ class MarketOpportunityAlertsConfig:
 
 
 @dataclass(slots=True)
+class PolymarketGatewayConfig:
+    enable_polymarket_gateway: bool
+    dry_run: bool
+    gamma_base_url: str
+    clob_base_url: str
+    private_key_env_var: str
+    api_key_env_var: str
+    api_secret_env_var: str
+    api_passphrase_env_var: str
+    allow_live_order_submission: bool
+
+
+@dataclass(slots=True)
 class Settings:
     mode: BotMode
     bankroll: BankrollConfig
@@ -119,3 +132,4 @@ class Settings:
     whitelist: WhitelistConfig
     blacklist: BlacklistConfig
     market_opportunity_alerts: MarketOpportunityAlertsConfig
+    polymarket_gateway: PolymarketGatewayConfig

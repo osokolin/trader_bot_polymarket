@@ -133,3 +133,19 @@ market_opportunity_alerts:
     - high_liquidity_market
     - resolving_soon_market
     - potential_context_market
+
+polymarket_gateway:
+  # Optional controlled adapter boundary for Polymarket metadata/execution plumbing.
+  enable_polymarket_gateway: false
+  # Keep external execution plumbing dry-run only by default.
+  dry_run: true
+  # Adapter endpoints. Defaults match the public Polymarket hosts.
+  gamma_base_url: https://gamma-api.polymarket.com
+  clob_base_url: https://clob.polymarket.com
+  # Secret material is loaded only from environment variables, never from YAML.
+  private_key_env_var: POLYMARKET_PRIVATE_KEY
+  api_key_env_var: POLYMARKET_API_KEY
+  api_secret_env_var: POLYMARKET_API_SECRET
+  api_passphrase_env_var: POLYMARKET_API_PASSPHRASE
+  # This milestone does not enable real submission by default.
+  allow_live_order_submission: false
