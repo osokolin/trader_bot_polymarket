@@ -16,19 +16,30 @@ from bot.domain.enums import (
     AlertSeverity,
     AlertState,
     AlertType,
+    ExecutionPreviewStatus,
     OperatorActionEntityType,
     OperatorActionRequestStatus,
     OperatorActionRequestType,
     ProposalStatus,
+    ReviewPreviewState,
     SourceType,
     TradeAction,
     WatchTargetType,
 )
-from bot.domain.models import Market, OperatorAlert, OpportunityCandidate, ProbabilityEstimate, TradeProposal
+from bot.domain.models import (
+    ExecutionPreview,
+    ExecutionPreviewReviewContext,
+    Market,
+    OperatorAlert,
+    OpportunityCandidate,
+    ProbabilityEstimate,
+    TradeProposal,
+)
 from bot.services.audit_log import AuditLogService
 from bot.services.decision_inbox import DecisionInboxService
 from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_pipeline import ExecutionPipelineService
+from bot.services.execution_preview import ExecutionPreviewService
 from bot.services.market_data import RevalidationSnapshot
 from bot.services.operator_notifications import OperatorNotificationsService
 from bot.services.proposal_engine import ProposalEngine
@@ -40,6 +51,7 @@ from bot.storage.repositories import (
     AuditRepository,
     AlertRepository,
     DecisionReviewRepository,
+    ExecutionPreviewRepository,
     OperatorActionRequestRepository,
     OrderIntentRepository,
     ProbabilitySnapshotRepository,
@@ -74,7 +86,9 @@ class _FakeTelegramOperatorService:
         self.cancelled: list[tuple[str, int]] = []
         self.analysis_requested: list[tuple[str, int]] = []
         self.request_actions: list[tuple[str, str, int]] = []
+        self.preview_refreshes: list[tuple[str, int]] = []
         self.opportunity_scans: list[tuple[int, int]] = []
+        self.preview_mode = "missing"
         self._requests = self._build_requests()
 
     def get_status(self):
@@ -177,6 +191,7 @@ class _FakeTelegramOperatorService:
                     "alert": None,
                     "diagnostics_label": None,
                     "diagnostics_check": None,
+                    "execution_preview_context": self._preview_context(proposal.proposal_id),
                 },
             )()
         return type(
@@ -188,6 +203,7 @@ class _FakeTelegramOperatorService:
                 "alert": self.list_alerts()[0],
                 "diagnostics_label": None,
                 "diagnostics_check": None,
+                "execution_preview_context": None,
             },
         )()
 
@@ -241,8 +257,18 @@ class _FakeTelegramOperatorService:
                 "alert": None if request.entity_type == OperatorActionEntityType.PROPOSAL else self.list_alerts()[0],
                 "diagnostics_label": None,
                 "diagnostics_check": None,
+                "execution_preview_context": (
+                    self._preview_context(request.entity_id)
+                    if request.entity_type == OperatorActionEntityType.PROPOSAL
+                    else None
+                ),
             },
         )()
+
+    def refresh_request_preview(self, request_id: str, chat_id: int):
+        self.preview_refreshes.append((request_id, chat_id))
+        self.preview_mode = "ready"
+        return self.get_request_details(request_id)
 
     def list_alerts(self, limit: int = 5):
         return [
@@ -263,6 +289,51 @@ class _FakeTelegramOperatorService:
 
     def poll_notifications(self):
         return self.notifications
+
+    def _preview_context(self, proposal_id: str) -> ExecutionPreviewReviewContext:
+        if self.preview_mode == "missing":
+            return ExecutionPreviewReviewContext(
+                state=ReviewPreviewState.MISSING,
+                latest_preview=None,
+                is_stale=False,
+            )
+        preview = ExecutionPreview(
+            preview_id="preview_1",
+            proposal_id=proposal_id,
+            source="polymarket_gateway",
+            dry_run=True,
+            market_id="mkt_1",
+            event_id="evt_1",
+            condition_id="cond_1",
+            token_id="token_yes",
+            side="yes",
+            intended_price=0.44,
+            quoted_price=0.45,
+            intended_size_usd=20.0,
+            normalized_size_usd=20.0,
+            estimated_shares=44.4,
+            status=(
+                ExecutionPreviewStatus.READY
+                if self.preview_mode == "ready"
+                else ExecutionPreviewStatus.READY_WITH_WARNINGS
+                if self.preview_mode == "warn"
+                else ExecutionPreviewStatus.BLOCKED
+            ),
+            warnings=[] if self.preview_mode != "warn" else ["quoted price differs materially from proposal limit price"],
+            validation_errors=[] if self.preview_mode != "failed" else ["gateway metadata did not expose a token id"],
+            preview_payload={"secret": "must-not-leak"},
+            created_at=utc_now(),
+        )
+        state = {
+            "ready": ReviewPreviewState.OK,
+            "warn": ReviewPreviewState.WARN,
+            "failed": ReviewPreviewState.FAILED,
+        }.get(self.preview_mode, ReviewPreviewState.MISSING)
+        return ExecutionPreviewReviewContext(
+            state=state,
+            latest_preview=preview,
+            is_stale=self.preview_mode == "warn",
+        )
 
     def approve_proposal(self, proposal_id: str, chat_id: int):
         self.approved.append((proposal_id, chat_id))
@@ -501,7 +572,46 @@ class TelegramOperatorTest(unittest.TestCase):
         request = router.handle_update({"message": {"chat": {"id": 123}, "text": "/request req_91af"}})[0]
         self.assertIn("Decision Inbox", inbox.text)
         self.assertIn("req_91af", request.text)
+        self.assertIn("Execution Preview (non-live)", request.text)
+        self.assertIn("preview_missing", request.text)
         self.assertIsNotNone(request.reply_markup)
+
+    def test_request_command_shows_warning_and_failed_preview_states_without_payload_leak(self) -> None:
+        service = _FakeTelegramOperatorService()
+        service.preview_mode = "warn"
+        router = TelegramRouter(TelegramOperatorAuth({123}), service)  # type: ignore[arg-type]
+        warning_request = router.handle_update({"message": {"chat": {"id": 123}, "text": "/request req_91af"}})[0]
+        self.assertIn("preview_warn", warning_request.text)
+        self.assertIn("Warnings:", warning_request.text)
+        self.assertIn("Stale: yes", warning_request.text)
+        self.assertNotIn("must-not-leak", warning_request.text)
+
+        service.preview_mode = "failed"
+        failed_request = router.handle_update({"message": {"chat": {"id": 123}, "text": "/request req_91af"}})[0]
+        self.assertIn("preview_failed", failed_request.text)
+        self.assertIn("Validation errors:", failed_request.text)
+
+    def test_preview_command_and_callback_refresh_non_live_preview(self) -> None:
+        service = _FakeTelegramOperatorService()
+        router = TelegramRouter(TelegramOperatorAuth({123}), service)  # type: ignore[arg-type]
+        reply = router.handle_update({"message": {"chat": {"id": 123}, "text": "/preview req_91af"}})[0]
+        self.assertIn("Execution Preview (non-live)", reply.text)
+        self.assertIn("refreshed just now", reply.text)
+        self.assertIn("preview_ok", reply.text)
+        self.assertEqual(service.preview_refreshes, [("req_91af", 123)])
+
+        callback_reply = router.handle_update(
+            {
+                "callback_query": {
+                    "id": "cb_preview",
+                    "data": "request:preview:req_91af",
+                    "message": {"chat": {"id": 123}},
+                }
+            }
+        )[0]
+        self.assertEqual(callback_reply.callback_query_id, "cb_preview")
+        self.assertIn("Execution Preview (non-live)", callback_reply.text)
+        self.assertEqual(service.preview_refreshes[-1], ("req_91af", 123))
 
     def test_review_queue_listing_and_review_next(self) -> None:
         service = _FakeTelegramOperatorService()
@@ -850,6 +960,12 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
             AuditLogService(self.audit_repository),
             notifications_service=None,
         )
+        self.execution_preview_service = ExecutionPreviewService(
+            proposal_service=self.proposal_service,
+            audit_log=AuditLogService(self.audit_repository),
+            preview_repository=ExecutionPreviewRepository(self.connection),
+            polymarket_gateway=None,
+        )
         self.decision_review_service = DecisionReviewService(
             self.proposal_service,
             self.execution_service,
@@ -861,6 +977,7 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
             audit_log=AuditLogService(self.audit_repository),
             proposal_service=self.proposal_service,
             decision_review_service=self.decision_review_service,
+            execution_preview_service=self.execution_preview_service,
             notifications_service=self.notifications_service,
             diagnostics_service=self._FakeDiagnosticsService(),
         )
@@ -873,6 +990,7 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
             decision_review_service=self.decision_review_service,
             decision_inbox_service=self.decision_inbox_service,
             notifications_service=self.notifications_service,
+            execution_preview_service=self.execution_preview_service,
             scanner_service=type("Scanner", (), {"scan": lambda *args, **kwargs: None})(),
             market_opportunity_alert_service=type(
                 "OpportunityAlerts",
@@ -956,6 +1074,45 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
         self.assertIsNotNone(next_view)
         assert next_view is not None
         self.assertEqual(next_view.request.request_id, alert_request.request_id)
+
+    def test_review_request_view_surfaces_missing_preview_then_refresh_persists_blocked_preview(self) -> None:
+        proposal = self._create_proposal()
+        request = self.decision_inbox_service.create_proposal_review_request(proposal)
+
+        initial_view = self.operator_service.get_request_details(request.request_id)
+        self.assertIsNotNone(initial_view.execution_preview_context)
+        assert initial_view.execution_preview_context is not None
+        self.assertEqual(initial_view.execution_preview_context.state, ReviewPreviewState.MISSING)
+
+        refreshed_view = self.operator_service.refresh_request_preview(request.request_id, chat_id=777)
+        assert refreshed_view.execution_preview_context is not None
+        self.assertEqual(refreshed_view.execution_preview_context.state, ReviewPreviewState.FAILED)
+        self.assertIsNotNone(refreshed_view.execution_preview_context.latest_preview)
+        assert refreshed_view.execution_preview_context.latest_preview is not None
+        self.assertTrue(refreshed_view.execution_preview_context.latest_preview.dry_run)
+
+        history = self.execution_preview_service.list_preview_history_for_proposal(proposal.proposal_id, limit=10)
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0].status, ExecutionPreviewStatus.BLOCKED)
+        audits = self.audit_repository.list_for_entity(request.request_id)
+        event_types = [item["event_type"] for item in audits]
+        self.assertIn("review_preview_missing", event_types)
+        self.assertIn("review_preview_refresh_requested", event_types)
+        self.assertIn("review_preview_failed", event_types)
+
+    def test_review_decision_logs_preview_context_without_changing_execution_behavior(self) -> None:
+        proposal = self._create_proposal()
+        request = self.decision_inbox_service.create_proposal_review_request(proposal)
+        self.operator_service.refresh_request_preview(request.request_id, chat_id=777)
+
+        result = self.operator_service.apply_request_action(request.request_id, "approve", chat_id=777)
+
+        self.assertIsNotNone(result.proposal)
+        self.assertEqual(self.execution_adapter.submit_calls, 0)
+        audits = self.audit_repository.list_for_entity(request.request_id)
+        preview_decision_audits = [item for item in audits if item["event_type"] == "review_decision_with_preview_context"]
+        self.assertEqual(len(preview_decision_audits), 1)
+        self.assertIn('"preview_state": "preview_failed"', preview_decision_audits[0]["payload_json"])
 
     def test_scan_opportunities_uses_existing_service_and_cooldown(self) -> None:
         proposal = self._create_proposal()

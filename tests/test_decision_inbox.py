@@ -22,6 +22,7 @@ from bot.services.audit_log import AuditLogService
 from bot.services.decision_inbox import DecisionInboxService
 from bot.services.decision_review import DecisionReviewService
 from bot.services.execution_pipeline import ExecutionPipelineService
+from bot.services.execution_preview import ExecutionPreviewService
 from bot.services.inbox_handlers.base import (
     DecisionInboxRequestHandler,
     DecisionInboxRequestView,
@@ -37,6 +38,7 @@ from bot.storage.repositories import (
     AlertRepository,
     AuditRepository,
     DecisionReviewRepository,
+    ExecutionPreviewRepository,
     OperatorActionRequestRepository,
     OrderIntentRepository,
     ProbabilitySnapshotRepository,
@@ -157,6 +159,12 @@ class DecisionInboxTest(unittest.TestCase):
             self.execution_service,
             DecisionReviewRepository(self.connection),
         )
+        self.execution_preview_service = ExecutionPreviewService(
+            proposal_service=self.proposal_service,
+            audit_log=AuditLogService(self.audit_repository),
+            preview_repository=ExecutionPreviewRepository(self.connection),
+            polymarket_gateway=None,
+        )
         self.diagnostics_service = _FakeDiagnosticsService()
         self.repository = OperatorActionRequestRepository(self.connection)
         self.service = DecisionInboxService(
@@ -165,6 +173,7 @@ class DecisionInboxTest(unittest.TestCase):
             audit_log=AuditLogService(self.audit_repository),
             proposal_service=self.proposal_service,
             decision_review_service=self.decision_review_service,
+            execution_preview_service=self.execution_preview_service,
             notifications_service=self.notifications_service,
             diagnostics_service=self.diagnostics_service,
         )
@@ -237,6 +246,7 @@ class DecisionInboxTest(unittest.TestCase):
             audit_log=AuditLogService(self.audit_repository),
             proposal_service=self.proposal_service,
             decision_review_service=self.decision_review_service,
+            execution_preview_service=self.execution_preview_service,
             notifications_service=self.notifications_service,
             diagnostics_service=self.diagnostics_service,
             handlers={OperatorActionRequestType.SCANNER_SUMMARY: handler},

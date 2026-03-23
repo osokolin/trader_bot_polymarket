@@ -3,8 +3,8 @@ from __future__ import annotations
 import logging
 from collections import Counter
 
-from bot.domain.enums import ExecutionPreviewStatus, ProposalStatus
-from bot.domain.models import ExecutionPreview, ExecutionPreviewSummary, TradeProposal
+from bot.domain.enums import ExecutionPreviewStatus, ProposalStatus, ReviewPreviewState
+from bot.domain.models import ExecutionPreview, ExecutionPreviewReviewContext, ExecutionPreviewSummary, TradeProposal
 from bot.integrations.polymarket_gateway import PolymarketGateway, PolymarketGatewayConfigError, PolymarketGatewayOrder
 from bot.services.audit_log import AuditLogService
 from bot.services.proposal_lifecycle import ProposalLifecycleService
@@ -144,6 +144,25 @@ class ExecutionPreviewService:
         self._log_history_request("recent", limit=limit)
         return self.preview_repository.list_recent(limit=limit)
 
+    def get_latest_preview_for_proposal(self, proposal_id: str) -> ExecutionPreview | None:
+        items = self.preview_repository.list_for_proposal(proposal_id, limit=1)
+        return items[0] if items else None
+
+    def build_review_context(self, proposal: TradeProposal) -> ExecutionPreviewReviewContext:
+        latest = self.get_latest_preview_for_proposal(proposal.proposal_id)
+        if latest is None:
+            return ExecutionPreviewReviewContext(
+                state=ReviewPreviewState.MISSING,
+                latest_preview=None,
+                is_stale=False,
+            )
+        is_stale = latest.created_at < proposal.updated_at
+        return ExecutionPreviewReviewContext(
+            state=self._review_state_for(latest),
+            latest_preview=latest,
+            is_stale=is_stale,
+        )
+
     def list_preview_history_for_proposal(self, proposal_id: str, limit: int = 20) -> list[ExecutionPreview]:
         self._log_history_request("proposal", proposal_id=proposal_id, limit=limit)
         return self.preview_repository.list_for_proposal(proposal_id, limit=limit)
@@ -206,6 +225,13 @@ class ExecutionPreviewService:
         if warnings:
             return ExecutionPreviewStatus.READY_WITH_WARNINGS
         return ExecutionPreviewStatus.READY
+
+    def _review_state_for(self, preview: ExecutionPreview) -> ReviewPreviewState:
+        if preview.status == ExecutionPreviewStatus.READY:
+            return ReviewPreviewState.OK
+        if preview.status == ExecutionPreviewStatus.READY_WITH_WARNINGS:
+            return ReviewPreviewState.WARN
+        return ReviewPreviewState.FAILED
 
     def _log_preview_result(self, preview: ExecutionPreview) -> None:
         payload = {

@@ -10,6 +10,7 @@ from bot.services.inbox_handlers.base import (
     DecisionInboxRequestView,
     InboxHandlerActionOutcome,
 )
+from bot.services.execution_preview import ExecutionPreviewService
 from bot.services.proposal_lifecycle import ProposalLifecycleService
 
 
@@ -21,15 +22,19 @@ class ProposalReviewRequestHandler(DecisionInboxRequestHandler):
         settings: Settings,
         proposal_service: ProposalLifecycleService,
         decision_review_service: DecisionReviewService,
+        execution_preview_service: ExecutionPreviewService,
     ) -> None:
         self.settings = settings
         self.proposal_service = proposal_service
         self.decision_review_service = decision_review_service
+        self.execution_preview_service = execution_preview_service
 
     def build_view(self, request: OperatorActionRequest) -> DecisionInboxRequestView:
+        proposal = self.proposal_service.latest_proposal_state(request.entity_id)
         return DecisionInboxRequestView(
             request=request,
-            proposal=self.proposal_service.latest_proposal_state(request.entity_id),
+            proposal=proposal,
+            execution_preview_context=self.execution_preview_service.build_review_context(proposal),
         )
 
     def apply_action(

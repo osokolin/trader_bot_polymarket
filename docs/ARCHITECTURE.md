@@ -44,6 +44,7 @@ market snapshot + signal + probability
 - This milestone keeps real order submission intentionally disabled even when the gateway is enabled; the current execution path remains `ProposalLifecycleService -> ExecutionPipelineService -> ExecutionAdapter`.
 - Gateway-backed execution preview is an explicit side path only: `bot proposals execution-preview <proposal_id>` uses `ExecutionPreviewService` plus the optional gateway to prepare a structured non-live artifact for operator inspection, without creating intents or changing the default execution pipeline.
 - Gateway-backed previews are now also persisted as a small non-live audit trail in SQLite. They remain separate from `order_intents` and real execution artifacts, and exist only to measure proposal-to-gateway reconciliation quality over time.
+- Proposal review cards in Telegram now reuse that persisted preview trail for decision support. Review surfaces show the latest preview state (`preview_ok`, `preview_warn`, `preview_failed`, `preview_missing`) and allow an explicit non-live preview refresh, but they do not auto-submit, auto-prepare live execution, or hard-gate approval yet.
 
 ## Bootstrap / Composition Root
 
@@ -54,9 +55,11 @@ market snapshot + signal + probability
 - Demo/static UI rendering reuses the same bootstrap layer instead of hand-building a second service graph.
 - `ExecutionPreviewService` is a narrow validation service, not a second execution pipeline. It exists to compare proposal-layer terms against gateway-resolved market/token/quote data and return warnings or blocked validation errors.
 - `ExecutionPreviewRepository` persists those non-live preview artifacts for operator inspection, failed-preview review, warning review, and basic summary analytics.
+- `ProposalReviewRequestHandler` now composes the latest persisted preview context into `DecisionInboxRequestView` for proposal review requests only. Preview refresh remains explicit through `TelegramOperatorService`, which calls the same `ExecutionPreviewService` and keeps preview generation out of the formatter/router layer.
 
 ## Decision Inbox Handlers
 
 - `DecisionInboxService` owns inbox semantics: request retrieval, queue ordering, request bookkeeping, and action recording.
 - Request-type-specific action logic is delegated to explicit handlers under `bot/services/inbox_handlers/`.
 - Proposal transitions still flow through `ProposalLifecycleService`; Telegram remains a thin caller through `TelegramOperatorService`.
+- Review-time preview visibility is intentionally soft: preview quality is surfaced to operators, logged for audit, and persisted in the existing preview table, but no approval rule or execution path depends on it in this milestone.

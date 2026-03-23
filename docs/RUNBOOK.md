@@ -90,6 +90,43 @@
 
 ------------------------------------------------------------------------
 
+### Если оператор reviewing proposal в Telegram и нужен execution preview
+
+Использовать:
+
+    /review-next
+    /request <id>
+
+На proposal review card теперь показывается:
+
+- `preview_ok`
+- `preview_warn`
+- `preview_failed`
+- `preview_missing`
+
+Что это значит:
+
+- `preview_ok` --- последний non-live preview согласовал market/token/side/price/size без warning'ов
+- `preview_warn` --- preview подготовился, но есть warning'и, которые оператор должен прочитать до approve
+- `preview_failed` --- preview не смог безопасно подготовиться; это soft warning для review, а не execution
+- `preview_missing` --- по proposal еще не запускали preview
+
+Чтобы явно обновить preview из review flow:
+
+    /preview <request_id>
+
+Или нажать inline кнопку `Preview`.
+
+Важно:
+
+- это создает новый persisted non-live preview audit record
+- это не создает intent
+- это не отправляет ордер
+- это не меняет `ManualExecutionGuard`
+- approve/reject/cancel semantics остаются прежними
+
+------------------------------------------------------------------------
+
 ### Если UI пустой
 
 Скорее всего нет данных.

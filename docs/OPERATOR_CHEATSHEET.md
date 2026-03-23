@@ -61,6 +61,8 @@ Seed demo данных:
     /inbox
     /review
     /review-next
+    /request <id>
+    /preview <request_id>
     /approve
     /reject
     /cancel
@@ -70,6 +72,12 @@ Seed demo данных:
 ### Правило оператора
 
 Proposal --- это **не ордер**, а **предложение**.
+
+Execution Preview в review:
+
+- `preview_ok` / `preview_warn` / `preview_failed` / `preview_missing`
+- это всегда non-live dry-run context
+- `/preview <request_id>` только обновляет preview audit trail, но не отправляет ордер
 
 Перед approve всегда проверяйте:
 

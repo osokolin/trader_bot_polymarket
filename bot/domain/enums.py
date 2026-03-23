@@ -75,6 +75,13 @@ class ExecutionPreviewStatus(str, Enum):
     BLOCKED = "blocked"
 
 
+class ReviewPreviewState(str, Enum):
+    MISSING = "preview_missing"
+    OK = "preview_ok"
+    WARN = "preview_warn"
+    FAILED = "preview_failed"
+
+
 class TradeAction(str, Enum):
     BUY = "buy"
     SELL = "sell"

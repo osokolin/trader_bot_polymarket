@@ -10,6 +10,7 @@ from bot.domain.models import DecisionReview, OperatorActionRequest, OperatorAle
 from bot.services.audit_log import AuditLogService
 from bot.services.decision_inbox import DecisionInboxActionResult, DecisionInboxRequestView, DecisionInboxService
 from bot.services.decision_review import DecisionReviewService
+from bot.services.execution_preview import ExecutionPreviewService
 from bot.services.market_opportunity_alerts import MarketOpportunityAlertScanResult, MarketOpportunityAlertService
 from bot.services.market_opportunity_scanner import MarketOpportunityScannerService
 from bot.services.polymarket_diagnostics import PolymarketDiagnosticsResult, PolymarketDiagnosticsService
@@ -47,6 +48,7 @@ class TelegramOperatorService:
     decision_review_service: DecisionReviewService
     decision_inbox_service: DecisionInboxService
     notifications_service: OperatorNotificationsService
+    execution_preview_service: ExecutionPreviewService
     scanner_service: MarketOpportunityScannerService
     market_opportunity_alert_service: MarketOpportunityAlertService | None
     diagnostics_service: PolymarketDiagnosticsService
@@ -136,12 +138,58 @@ class TelegramOperatorService:
         request = self.decision_inbox_service.get_next_open_request()
         if request is None:
             return None
-        return self.decision_inbox_service.get_request_view(request.request_id)
+        view = self.decision_inbox_service.get_request_view(request.request_id)
+        self._log_review_preview_display(view, context="review_next")
+        return view
 
     def get_request_details(self, request_id: str) -> DecisionInboxRequestView:
-        return self.decision_inbox_service.get_request_view(request_id)
+        view = self.decision_inbox_service.get_request_view(request_id)
+        self._log_review_preview_display(view, context="request_details")
+        return view
+
+    def refresh_request_preview(self, request_id: str, chat_id: int) -> DecisionInboxRequestView:
+        view = self.decision_inbox_service.get_request_view(request_id)
+        if view.proposal is None:
+            raise ValueError("Execution preview is available only for proposal review requests.")
+        now = monotonic()
+        self.audit_log.log(
+            event_type="review_preview_refresh_requested",
+            entity_id=request_id,
+            message="Operator requested execution preview refresh from review flow",
+            payload={
+                "request_id": request_id,
+                "proposal_id": view.proposal.proposal_id,
+                "chat_id": chat_id,
+                "source": "telegram",
+                "dry_run": True,
+            },
+        )
+        preview = self.execution_preview_service.preview_proposal(view.proposal.proposal_id)
+        refreshed_view = self.decision_inbox_service.get_request_view(request_id)
+        event_type = "review_preview_failed" if preview.validation_errors else "review_preview_generated"
+        self.audit_log.log(
+            event_type=event_type,
+            entity_id=request_id,
+            message="Execution preview refreshed for review flow",
+            payload={
+                "request_id": request_id,
+                "proposal_id": preview.proposal_id,
+                "preview_id": preview.preview_id,
+                "status": preview.status.value,
+                "warning_count": len(preview.warnings),
+                "validation_error_count": len(preview.validation_errors),
+                "chat_id": chat_id,
+                "source": "telegram",
+                "dry_run": preview.dry_run,
+                "elapsed_ms": int((monotonic() - now) * 1000),
+            },
+            created_at=preview.created_at,
+        )
+        self._log_review_preview_display(refreshed_view, context="preview_refresh")
+        return refreshed_view
 
     def apply_request_action(self, request_id: str, action: str, chat_id: int) -> DecisionInboxActionResult:
+        self._log_review_decision_context(request_id, action, chat_id)
         try:
             return self.decision_inbox_service.apply_action(
                 request_id=request_id,
@@ -261,6 +309,72 @@ class TelegramOperatorService:
                 notifications.extend(TelegramNotification("inbox_request", item) for item in current_requests)
             self._last_diagnostics_failure = diagnostics_signature
         return notifications
+
+    def _log_review_preview_display(self, view: DecisionInboxRequestView, *, context: str) -> None:
+        if view.proposal is None or view.execution_preview_context is None:
+            return
+        payload = {
+            "request_id": view.request.request_id,
+            "proposal_id": view.proposal.proposal_id,
+            "context": context,
+            "preview_state": view.execution_preview_context.state.value,
+            "preview_stale": view.execution_preview_context.is_stale,
+        }
+        latest = view.execution_preview_context.latest_preview
+        if latest is None:
+            self.audit_log.log(
+                event_type="review_preview_missing",
+                entity_id=view.request.request_id,
+                message="Review preview context is missing",
+                payload=payload,
+            )
+            return
+        payload.update(
+            {
+                "preview_id": latest.preview_id,
+                "preview_status": latest.status.value,
+                "warning_count": len(latest.warnings),
+                "validation_error_count": len(latest.validation_errors),
+                "dry_run": latest.dry_run,
+            }
+        )
+        self.audit_log.log(
+            event_type="review_preview_displayed",
+            entity_id=view.request.request_id,
+            message="Review preview context displayed",
+            payload=payload,
+            created_at=latest.created_at,
+        )
+
+    def _log_review_decision_context(self, request_id: str, action: str, chat_id: int) -> None:
+        view = self.decision_inbox_service.get_request_view(request_id)
+        if view.proposal is None or view.execution_preview_context is None:
+            return
+        payload = {
+            "request_id": request_id,
+            "proposal_id": view.proposal.proposal_id,
+            "action": action,
+            "chat_id": chat_id,
+            "source": "telegram",
+            "preview_state": view.execution_preview_context.state.value,
+            "preview_stale": view.execution_preview_context.is_stale,
+        }
+        latest = view.execution_preview_context.latest_preview
+        if latest is not None:
+            payload.update(
+                {
+                    "preview_id": latest.preview_id,
+                    "preview_status": latest.status.value,
+                    "warning_count": len(latest.warnings),
+                    "validation_error_count": len(latest.validation_errors),
+                }
+            )
+        self.audit_log.log(
+            event_type="review_decision_with_preview_context",
+            entity_id=request_id,
+            message="Review decision applied with preview context",
+            payload=payload,
+        )
 
     def _run_background_opportunity_scan_if_due(self) -> None:
         if self.market_opportunity_alert_service is None:

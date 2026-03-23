@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from bot.domain.enums import AlertType
-from bot.domain.enums import OperatorActionRequestStatus, OperatorActionRequestType, ProposalStatus
+from bot.domain.enums import OperatorActionRequestStatus, OperatorActionRequestType, ProposalStatus, ReviewPreviewState
 from bot.services.telegram_operator_service import TelegramNotification
 from bot.telegram.actions import proposal_callback, request_callback
 
@@ -24,6 +24,7 @@ def help_message() -> str:
         "/review\n"
         "/review-next\n"
         "/request <id>\n"
+        "/preview <request_id>\n"
         "/proposals\n"
         "/proposal <id>\n"
         "/approve <id>\n"
@@ -173,7 +174,57 @@ def review_queue_message(requests) -> str:
     return "\n".join(lines)
 
 
-def request_message(view) -> str:
+def _preview_state_label(state: ReviewPreviewState) -> str:
+    return {
+        ReviewPreviewState.MISSING: "preview_missing",
+        ReviewPreviewState.OK: "preview_ok",
+        ReviewPreviewState.WARN: "preview_warn",
+        ReviewPreviewState.FAILED: "preview_failed",
+    }[state]
+
+
+def _preview_block(view, *, refreshed: bool = False) -> str:
+    context = view.execution_preview_context
+    if context is None:
+        return ""
+    lines = [
+        "",
+        "Execution Preview (non-live)",
+        f"State: {_preview_state_label(context.state)}",
+    ]
+    if refreshed:
+        lines.append("Preview source: refreshed just now")
+    elif context.latest_preview is None:
+        lines.append("Preview source: no persisted preview yet")
+    else:
+        lines.append("Preview source: latest persisted preview")
+    if context.latest_preview is None:
+        lines.append("Status: unavailable")
+        lines.append("Use Preview to generate a fresh dry-run reconciliation.")
+        return "\n".join(lines)
+    preview = context.latest_preview
+    lines.extend(
+        [
+            f"Preview status: {preview.status.value}",
+            f"Stale: {'yes' if context.is_stale else 'no'}",
+            f"Side: {preview.side}",
+            f"Intended price: {preview.intended_price:.4f}",
+            f"Quoted price: {'-' if preview.quoted_price is None else f'{preview.quoted_price:.4f}'}",
+            f"Intended size: {preview.intended_size_usd:.2f}",
+            f"Normalized size: {'-' if preview.normalized_size_usd is None else f'{preview.normalized_size_usd:.2f}'}",
+            f"Token: {preview.token_id or '-'}",
+        ]
+    )
+    if preview.validation_errors:
+        lines.append("Validation errors:")
+        lines.extend(f"- {item}" for item in preview.validation_errors[:3])
+    elif preview.warnings:
+        lines.append("Warnings:")
+        lines.extend(f"- {item}" for item in preview.warnings[:3])
+    return "\n".join(lines)
+
+
+def request_message(view, *, preview_refreshed: bool = False) -> str:
     request = view.request
     if request.request_type == OperatorActionRequestType.PROPOSAL_REVIEW_REQUEST and view.proposal is not None:
         proposal = view.proposal
@@ -187,6 +238,7 @@ def request_message(view) -> str:
             f"Edge: {proposal.edge:+.4f}\n"
             f"Confidence: {proposal.confidence:.2f}\n"
             f"Status: {request.status.value}"
+            f"{_preview_block(view, refreshed=preview_refreshed)}"
         )
     if request.request_type == OperatorActionRequestType.ALERT_NOTIFICATION and view.alert is not None:
         return (
@@ -361,6 +413,7 @@ def request_actions_markup(request) -> dict[str, object] | None:
             )
             rows.append(
                 [
+                    {"text": "Preview", "callback_data": request_callback("preview", request.request_id)},
                     {"text": "More Analysis", "callback_data": request_callback("analysis", request.request_id)},
                     {"text": "Skip", "callback_data": request_callback("skip", request.request_id)},
                 ]
