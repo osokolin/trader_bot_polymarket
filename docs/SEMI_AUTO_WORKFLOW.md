@@ -45,6 +45,7 @@ At the current milestone depth:
 39. Operators can inspect persisted preview audit history via `bot proposals execution-preview-history <proposal_id>`, `bot execution-previews list --scope failed|warnings|recent`, and `bot execution-previews summary` to understand how often gateway-backed preparation succeeds, warns, or fails and why.
 40. Telegram proposal review cards now surface the latest persisted execution preview context when available. Review shows one soft signal (`preview_ok`, `preview_warn`, `preview_failed`, `preview_missing`), plus compact non-live preview fields such as side, intended price, quoted price, size, warnings, and validation errors.
 41. Review-time preview generation remains explicit: `/preview <request_id>` and the inline `Preview` button refresh a new non-live preview for the current proposal review request, persist it through the existing preview audit trail, and log review-preview events without changing approval semantics.
+42. Review cards now also derive an advisory hint from preview state: `OK`, `CAUTION`, `RISKY`, or `NO PREVIEW`. These hints are deterministic, non-blocking operator guidance only and create a small foundation for future soft or hard policy gating.
 
 
 Execution adapters remain non-autonomous; approval currently stops at a verified `approved` state.
@@ -56,6 +57,7 @@ Public market-data integration does not include authenticated trading, order pos
 Telegram proposal actions remain lifecycle-bound and execution-safe: they may approve, reject, cancel, or request additional analysis for proposals, but they do not create intents, submit orders, simulate execution, or mutate runtime mode/configuration.
 Telegram decision cards are now request-based: proposal, alert, and diagnostics actions are scoped to persisted `request_id` records, preserving server-side auditability and keeping Telegram as a thin operator surface.
 Review preview context is intentionally decision support only. Preview failures or warnings are visible to operators and logged for later policy analysis, but they do not yet hard-block approval or route anything into the live execution path.
+Preview-derived hints are equally non-binding: they summarize preview quality for faster operator scanning, but they do not add hidden approval logic or automatic escalation.
 Operator inspection paths are cache-first by default. The UI live-market page and `bot markets live <market_id>` prefer the latest cached snapshot and only refresh externally when the operator asks for it.
 Paper execution uses a deterministic dry-run adapter and writes simulated execution details to review and audit trails.
 Terminal simulated intents are not re-simulated; operators must create a new intent if they need another scenario run.

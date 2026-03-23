@@ -190,8 +190,12 @@ def _preview_block(view, *, refreshed: bool = False) -> str:
     lines = [
         "",
         "Execution Preview (non-live)",
+        f"Hint: {context.hint_label}",
+        f"Guidance: {context.hint_message}",
         f"State: {_preview_state_label(context.state)}",
     ]
+    if context.hint_nudge:
+        lines.append(f"Suggested action: {context.hint_nudge}")
     if refreshed:
         lines.append("Preview source: refreshed just now")
     elif context.latest_preview is None:
@@ -200,7 +204,6 @@ def _preview_block(view, *, refreshed: bool = False) -> str:
         lines.append("Preview source: latest persisted preview")
     if context.latest_preview is None:
         lines.append("Status: unavailable")
-        lines.append("Use Preview to generate a fresh dry-run reconciliation.")
         return "\n".join(lines)
     preview = context.latest_preview
     lines.extend(

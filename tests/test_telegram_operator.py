@@ -21,6 +21,7 @@ from bot.domain.enums import (
     OperatorActionRequestStatus,
     OperatorActionRequestType,
     ProposalStatus,
+    ReviewPreviewHintLevel,
     ReviewPreviewState,
     SourceType,
     TradeAction,
@@ -296,6 +297,10 @@ class _FakeTelegramOperatorService:
                 state=ReviewPreviewState.MISSING,
                 latest_preview=None,
                 is_stale=False,
+                hint_level=ReviewPreviewHintLevel.UNAVAILABLE,
+                hint_label="NO PREVIEW",
+                hint_message="No preview available.",
+                hint_nudge="Run Preview",
             )
         preview = ExecutionPreview(
             preview_id="preview_1",
@@ -333,6 +338,34 @@ class _FakeTelegramOperatorService:
             state=state,
             latest_preview=preview,
             is_stale=self.preview_mode == "warn",
+            hint_level=(
+                ReviewPreviewHintLevel.OK
+                if self.preview_mode == "ready"
+                else ReviewPreviewHintLevel.CAUTION
+                if self.preview_mode == "warn"
+                else ReviewPreviewHintLevel.RISKY
+            ),
+            hint_label=(
+                "OK"
+                if self.preview_mode == "ready"
+                else "CAUTION"
+                if self.preview_mode == "warn"
+                else "RISKY"
+            ),
+            hint_message=(
+                "Execution preview looks consistent."
+                if self.preview_mode == "ready"
+                else "Execution has warnings."
+                if self.preview_mode == "warn"
+                else "Execution preview failed — high risk of mismatch."
+            ),
+            hint_nudge=(
+                None
+                if self.preview_mode == "ready"
+                else "Check price/size"
+                if self.preview_mode == "warn"
+                else "Review details carefully"
+            ),
         )
 
     def approve_proposal(self, proposal_id: str, chat_id: int):
@@ -573,6 +606,8 @@ class TelegramOperatorTest(unittest.TestCase):
         self.assertIn("Decision Inbox", inbox.text)
         self.assertIn("req_91af", request.text)
         self.assertIn("Execution Preview (non-live)", request.text)
+        self.assertIn("Hint: NO PREVIEW", request.text)
+        self.assertIn("Guidance: No preview available.", request.text)
         self.assertIn("preview_missing", request.text)
         self.assertIsNotNone(request.reply_markup)
 
@@ -581,6 +616,9 @@ class TelegramOperatorTest(unittest.TestCase):
         service.preview_mode = "warn"
         router = TelegramRouter(TelegramOperatorAuth({123}), service)  # type: ignore[arg-type]
         warning_request = router.handle_update({"message": {"chat": {"id": 123}, "text": "/request req_91af"}})[0]
+        self.assertIn("Hint: CAUTION", warning_request.text)
+        self.assertIn("Guidance: Execution has warnings.", warning_request.text)
+        self.assertIn("Suggested action: Check price/size", warning_request.text)
         self.assertIn("preview_warn", warning_request.text)
         self.assertIn("Warnings:", warning_request.text)
         self.assertIn("Stale: yes", warning_request.text)
@@ -588,6 +626,9 @@ class TelegramOperatorTest(unittest.TestCase):
 
         service.preview_mode = "failed"
         failed_request = router.handle_update({"message": {"chat": {"id": 123}, "text": "/request req_91af"}})[0]
+        self.assertIn("Hint: RISKY", failed_request.text)
+        self.assertIn("Guidance: Execution preview failed", failed_request.text)
+        self.assertIn("Suggested action: Review details carefully", failed_request.text)
         self.assertIn("preview_failed", failed_request.text)
         self.assertIn("Validation errors:", failed_request.text)
 
@@ -596,6 +637,8 @@ class TelegramOperatorTest(unittest.TestCase):
         router = TelegramRouter(TelegramOperatorAuth({123}), service)  # type: ignore[arg-type]
         reply = router.handle_update({"message": {"chat": {"id": 123}, "text": "/preview req_91af"}})[0]
         self.assertIn("Execution Preview (non-live)", reply.text)
+        self.assertIn("Hint: OK", reply.text)
+        self.assertIn("Guidance: Execution preview looks consistent.", reply.text)
         self.assertIn("refreshed just now", reply.text)
         self.assertIn("preview_ok", reply.text)
         self.assertEqual(service.preview_refreshes, [("req_91af", 123)])
@@ -1096,7 +1139,12 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
         self.assertEqual(history[0].status, ExecutionPreviewStatus.BLOCKED)
         audits = self.audit_repository.list_for_entity(request.request_id)
         event_types = [item["event_type"] for item in audits]
+        hint_audits = [item for item in audits if item["event_type"] == "review_preview_hint_displayed"]
         self.assertIn("review_preview_missing", event_types)
+        self.assertEqual(len(hint_audits), 2)
+        hint_payloads = [item["payload_json"] for item in hint_audits]
+        self.assertTrue(any('"hint_level": "hint_unavailable"' in item for item in hint_payloads))
+        self.assertTrue(any('"hint_level": "hint_risky"' in item for item in hint_payloads))
         self.assertIn("review_preview_refresh_requested", event_types)
         self.assertIn("review_preview_failed", event_types)
 
@@ -1113,6 +1161,7 @@ class TelegramOperatorIntegrationTest(unittest.TestCase):
         preview_decision_audits = [item for item in audits if item["event_type"] == "review_decision_with_preview_context"]
         self.assertEqual(len(preview_decision_audits), 1)
         self.assertIn('"preview_state": "preview_failed"', preview_decision_audits[0]["payload_json"])
+        self.assertIn('"hint_level": "hint_risky"', preview_decision_audits[0]["payload_json"])
 
     def test_scan_opportunities_uses_existing_service_and_cooldown(self) -> None:
         proposal = self._create_proposal()

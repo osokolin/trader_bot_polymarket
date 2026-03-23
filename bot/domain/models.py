@@ -15,6 +15,7 @@ from bot.domain.enums import (
     OperatorActionRequestType,
     ProposalStatus,
     PositionStatus,
+    ReviewPreviewHintLevel,
     ReviewPreviewState,
     SourceType,
     TradeAction,
@@ -251,6 +252,10 @@ class ExecutionPreviewReviewContext:
     state: ReviewPreviewState
     latest_preview: ExecutionPreview | None
     is_stale: bool
+    hint_level: ReviewPreviewHintLevel
+    hint_label: str
+    hint_message: str
+    hint_nudge: str | None = None
 
 
 @dataclass(slots=True)

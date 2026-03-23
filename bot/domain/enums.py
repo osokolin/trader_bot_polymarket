@@ -82,6 +82,13 @@ class ReviewPreviewState(str, Enum):
     FAILED = "preview_failed"
 
 
+class ReviewPreviewHintLevel(str, Enum):
+    OK = "hint_ok"
+    CAUTION = "hint_caution"
+    RISKY = "hint_risky"
+    UNAVAILABLE = "hint_unavailable"
+
+
 class TradeAction(str, Enum):
     BUY = "buy"
     SELL = "sell"

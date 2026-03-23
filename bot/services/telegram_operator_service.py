@@ -318,8 +318,15 @@ class TelegramOperatorService:
             "proposal_id": view.proposal.proposal_id,
             "context": context,
             "preview_state": view.execution_preview_context.state.value,
+            "hint_level": view.execution_preview_context.hint_level.value,
             "preview_stale": view.execution_preview_context.is_stale,
         }
+        self.audit_log.log(
+            event_type="review_preview_hint_displayed",
+            entity_id=view.request.request_id,
+            message="Review preview hint displayed",
+            payload=payload,
+        )
         latest = view.execution_preview_context.latest_preview
         if latest is None:
             self.audit_log.log(
@@ -357,6 +364,7 @@ class TelegramOperatorService:
             "chat_id": chat_id,
             "source": "telegram",
             "preview_state": view.execution_preview_context.state.value,
+            "hint_level": view.execution_preview_context.hint_level.value,
             "preview_stale": view.execution_preview_context.is_stale,
         }
         latest = view.execution_preview_context.latest_preview

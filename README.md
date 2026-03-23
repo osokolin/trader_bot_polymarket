@@ -252,6 +252,7 @@ validation artifact for future redesign work, not a live execution path.
 That same persisted preview trail now feeds operator review:
 - `/request <id>` and `/review-next` show the latest preview state for proposal review requests
 - `preview_ok`, `preview_warn`, `preview_failed`, and `preview_missing` are surfaced as compact review signals
+- the review card also derives a soft hint from preview state: `OK`, `CAUTION`, `RISKY`, or `NO PREVIEW`
 - `/preview <request_id>` or the inline `Preview` action explicitly refreshes preview state from the review flow
 - refreshed previews remain strictly non-live and keep approval separate from any future submission path
 
@@ -373,6 +374,8 @@ Phase 4 adds a sequential Telegram review queue:
 
 Preview in review remains decision support only:
 - it is always labeled non-live / dry-run
+- hint labels are advisory only and do not enforce approval behavior
+- `OK` means the preview looks consistent, `CAUTION` means warnings need review, `RISKY` means preview failed, and `NO PREVIEW` means the operator may want to generate one
 - refreshing preview creates another preview audit record, but does not create intents or submit orders
 - warnings and validation failures are surfaced to the operator, but they do not yet hard-block approval
 - approval semantics and `ManualExecutionGuard` remain unchanged
