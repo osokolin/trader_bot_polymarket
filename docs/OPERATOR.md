@@ -623,7 +623,14 @@ Preview states shown during review:
 - `preview_failed` — preview could not prepare a safe dry-run artifact
 - `preview_missing` — no preview has been generated yet
 
-Preview in review is decision support only. It does not create intents, submit orders, or change `ManualExecutionGuard`.
+Hint labels shown alongside preview:
+
+- `OK` — execution preview looks consistent
+- `CAUTION` — execution has warnings; check price/size/token details
+- `RISKY` — execution preview failed; review details carefully
+- `NO PREVIEW` — no preview available yet; consider running `/preview <request_id>`
+
+Preview in review is decision support only. It does not create intents, submit orders, change `ManualExecutionGuard`, or block approval.
 
 Keep Telegram access restricted to approved chat IDs.
 

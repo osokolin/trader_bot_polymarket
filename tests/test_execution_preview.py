@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from bot.cli.app import main
 from bot.config.loader import load_settings
-from bot.domain.enums import ExecutionPreviewStatus, SourceType
+from bot.domain.enums import ExecutionPreviewStatus, ReviewPreviewHintLevel, ReviewPreviewState, SourceType
 from bot.domain.models import Market, ProbabilityEstimate
 from bot.integrations.polymarket_gateway import PolymarketGatewayMetadata, PolymarketGatewayQuote
 from bot.services.audit_log import AuditLogService
@@ -216,6 +216,62 @@ class ExecutionPreviewServiceTest(unittest.TestCase):
         self.assertEqual(len(persisted), 1)
         self.assertEqual(persisted[0].status, ExecutionPreviewStatus.READY)
         self.assertTrue(persisted[0].dry_run)
+
+    def test_review_context_maps_preview_states_to_soft_hints(self) -> None:
+        service = ExecutionPreviewService(
+            self.proposal_service,
+            self.audit_log,
+            self.preview_repository,
+            polymarket_gateway=None,
+        )
+        missing_context = service.build_review_context(self.approved)
+        self.assertEqual(missing_context.state, ReviewPreviewState.MISSING)
+        self.assertEqual(missing_context.hint_level, ReviewPreviewHintLevel.UNAVAILABLE)
+        self.assertEqual(missing_context.hint_label, "NO PREVIEW")
+
+        ready_gateway = _FakeGateway(
+            metadata=self._metadata(token_map={"yes": "tok_yes", "no": "tok_no"}),
+            quote=self._quote(),
+        )
+        ready_service = ExecutionPreviewService(
+            self.proposal_service,
+            self.audit_log,
+            self.preview_repository,
+            polymarket_gateway=ready_gateway,
+        )  # type: ignore[arg-type]
+        ready_service.preview_proposal(self.approved.proposal_id)
+        ready_context = ready_service.build_review_context(self.approved)
+        self.assertEqual(ready_context.state, ReviewPreviewState.OK)
+        self.assertEqual(ready_context.hint_level, ReviewPreviewHintLevel.OK)
+        self.assertEqual(ready_context.hint_label, "OK")
+
+        warning_gateway = _FakeGateway(
+            metadata=self._metadata(token_map={"yes": "tok_yes", "no": "tok_no"}),
+            quote=self._quote(quoted_price=0.58),
+        )
+        warning_service = ExecutionPreviewService(
+            self.proposal_service,
+            self.audit_log,
+            self.preview_repository,
+            polymarket_gateway=warning_gateway,
+        )  # type: ignore[arg-type]
+        warning_service.preview_proposal(self.approved.proposal_id)
+        warning_context = warning_service.build_review_context(self.approved)
+        self.assertEqual(warning_context.state, ReviewPreviewState.WARN)
+        self.assertEqual(warning_context.hint_level, ReviewPreviewHintLevel.CAUTION)
+        self.assertEqual(warning_context.hint_label, "CAUTION")
+
+        blocked_service = ExecutionPreviewService(
+            self.proposal_service,
+            self.audit_log,
+            self.preview_repository,
+            polymarket_gateway=None,
+        )
+        blocked_service.preview_proposal(self.approved.proposal_id)
+        blocked_context = blocked_service.build_review_context(self.approved)
+        self.assertEqual(blocked_context.state, ReviewPreviewState.FAILED)
+        self.assertEqual(blocked_context.hint_level, ReviewPreviewHintLevel.RISKY)
+        self.assertEqual(blocked_context.hint_label, "RISKY")
 
     def test_preview_is_blocked_when_gateway_is_disabled(self) -> None:
         gateway = _FakeGateway(

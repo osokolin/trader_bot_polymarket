@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from collections import Counter
 
-from bot.domain.enums import ExecutionPreviewStatus, ProposalStatus, ReviewPreviewState
+from bot.domain.enums import ExecutionPreviewStatus, ProposalStatus, ReviewPreviewHintLevel, ReviewPreviewState
 from bot.domain.models import ExecutionPreview, ExecutionPreviewReviewContext, ExecutionPreviewSummary, TradeProposal
 from bot.integrations.polymarket_gateway import PolymarketGateway, PolymarketGatewayConfigError, PolymarketGatewayOrder
 from bot.services.audit_log import AuditLogService
@@ -155,12 +155,21 @@ class ExecutionPreviewService:
                 state=ReviewPreviewState.MISSING,
                 latest_preview=None,
                 is_stale=False,
+                hint_level=ReviewPreviewHintLevel.UNAVAILABLE,
+                hint_label="NO PREVIEW",
+                hint_message="No preview available.",
+                hint_nudge="Run Preview",
             )
         is_stale = latest.created_at < proposal.updated_at
+        hint_level, hint_label, hint_message, hint_nudge = self._hint_for(latest)
         return ExecutionPreviewReviewContext(
             state=self._review_state_for(latest),
             latest_preview=latest,
             is_stale=is_stale,
+            hint_level=hint_level,
+            hint_label=hint_label,
+            hint_message=hint_message,
+            hint_nudge=hint_nudge,
         )
 
     def list_preview_history_for_proposal(self, proposal_id: str, limit: int = 20) -> list[ExecutionPreview]:
@@ -233,6 +242,30 @@ class ExecutionPreviewService:
             return ReviewPreviewState.WARN
         return ReviewPreviewState.FAILED
 
+    def _hint_for(
+        self,
+        preview: ExecutionPreview,
+    ) -> tuple[ReviewPreviewHintLevel, str, str, str | None]:
+        if preview.validation_errors:
+            return (
+                ReviewPreviewHintLevel.RISKY,
+                "RISKY",
+                "Execution preview failed — high risk of mismatch.",
+                "Review details carefully",
+            )
+        if preview.warnings:
+            return (
+                ReviewPreviewHintLevel.CAUTION,
+                "CAUTION",
+                "Execution has warnings.",
+                "Check price/size",
+            )
+        return (
+            ReviewPreviewHintLevel.OK,
+            "OK",
+            "Execution preview looks consistent.",
+            None,
+        )
     def _log_preview_result(self, preview: ExecutionPreview) -> None:
         payload = {
             "preview_id": preview.preview_id,
