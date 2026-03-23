@@ -3,6 +3,7 @@ from __future__ import annotations
 from bot.config.models import Settings
 from bot.domain.enums import OperatorActionRequestType
 from bot.services.decision_review import DecisionReviewService
+from bot.services.execution_preview import ExecutionPreviewService
 from bot.services.inbox_handlers.alerts import AlertNotificationHandler
 from bot.services.inbox_handlers.base import (
     DecisionInboxError,
@@ -22,6 +23,7 @@ def build_default_inbox_handlers(
     settings: Settings,
     proposal_service: ProposalLifecycleService,
     decision_review_service: DecisionReviewService,
+    execution_preview_service: ExecutionPreviewService,
     notifications_service: OperatorNotificationsService,
     diagnostics_service: PolymarketDiagnosticsService,
 ) -> dict[OperatorActionRequestType, DecisionInboxRequestHandler]:
@@ -30,6 +32,7 @@ def build_default_inbox_handlers(
             settings=settings,
             proposal_service=proposal_service,
             decision_review_service=decision_review_service,
+            execution_preview_service=execution_preview_service,
         ),
         OperatorActionRequestType.ALERT_NOTIFICATION: AlertNotificationHandler(
             notifications_service=notifications_service,

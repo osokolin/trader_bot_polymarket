@@ -249,6 +249,12 @@ The preview is intended to answer whether our proposal layer and the gateway
 agree on market id, token/outcome mapping, side, price, and size. It is a
 validation artifact for future redesign work, not a live execution path.
 
+That same persisted preview trail now feeds operator review:
+- `/request <id>` and `/review-next` show the latest preview state for proposal review requests
+- `preview_ok`, `preview_warn`, `preview_failed`, and `preview_missing` are surfaced as compact review signals
+- `/preview <request_id>` or the inline `Preview` action explicitly refreshes preview state from the review flow
+- refreshed previews remain strictly non-live and keep approval separate from any future submission path
+
 Inspection commands:
 
 ```bash
@@ -336,6 +342,7 @@ Supported commands:
 - `/review`
 - `/review-next`
 - `/request <id>`
+- `/preview <request_id>`
 - `/proposals`
 - `/proposal <id>`
 - `/approve <id>`
@@ -358,8 +365,17 @@ Phase 3 adds a persisted Telegram decision inbox:
 Phase 4 adds a sequential Telegram review queue:
 - `/review` shows the current open request queue
 - `/review-next` opens the next open request in created order
+- proposal review cards surface the latest persisted execution preview context when it exists
+- missing preview context is shown explicitly as `preview_missing`
+- `/preview <request_id>` and the inline `Preview` button explicitly refresh a non-live preview for the current review request
 - queue actions may move directly to the next request card
 - `/skip <request_id>` acknowledges a request and removes it from the open review queue
+
+Preview in review remains decision support only:
+- it is always labeled non-live / dry-run
+- refreshing preview creates another preview audit record, but does not create intents or submit orders
+- warnings and validation failures are surfaced to the operator, but they do not yet hard-block approval
+- approval semantics and `ManualExecutionGuard` remain unchanged
 
 Telegram still remains execution-safe:
 - no intent creation

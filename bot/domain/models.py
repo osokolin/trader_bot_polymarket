@@ -15,6 +15,7 @@ from bot.domain.enums import (
     OperatorActionRequestType,
     ProposalStatus,
     PositionStatus,
+    ReviewPreviewState,
     SourceType,
     TradeAction,
     WatchTargetType,
@@ -243,6 +244,13 @@ class ExecutionPreview:
     validation_errors: list[str]
     preview_payload: dict[str, object]
     created_at: datetime
+
+
+@dataclass(slots=True)
+class ExecutionPreviewReviewContext:
+    state: ReviewPreviewState
+    latest_preview: ExecutionPreview | None
+    is_stale: bool
 
 
 @dataclass(slots=True)

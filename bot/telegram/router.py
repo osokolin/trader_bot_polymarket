@@ -86,6 +86,15 @@ class TelegramRouter:
                 formatter.request_message(view),
                 reply_markup=formatter.request_actions_markup(view.request),
             )
+        if command == "/preview":
+            if len(parts) < 2:
+                raise ValueError("Usage: /preview <request_id>")
+            view = self.operator_service.refresh_request_preview(parts[1], chat_id)
+            return TelegramOutboundMessage(
+                chat_id,
+                formatter.request_message(view, preview_refreshed=True),
+                reply_markup=formatter.request_actions_markup(view.request),
+            )
         if command == "/proposals":
             return TelegramOutboundMessage(chat_id, formatter.proposals_message(self.operator_service.list_proposals()))
         if command == "/proposal":
@@ -195,6 +204,16 @@ class TelegramRouter:
                         TelegramOutboundMessage(
                             chat_id,
                             formatter.request_message(view),
+                            reply_markup=formatter.request_actions_markup(view.request),
+                            callback_query_id=callback_id,
+                        )
+                    ]
+                if action == "preview":
+                    view = self.operator_service.refresh_request_preview(request_id, chat_id)
+                    return [
+                        TelegramOutboundMessage(
+                            chat_id,
+                            formatter.request_message(view, preview_refreshed=True),
                             reply_markup=formatter.request_actions_markup(view.request),
                             callback_query_id=callback_id,
                         )

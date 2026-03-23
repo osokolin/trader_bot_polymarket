@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 PROPOSAL_ACTIONS = {"approve", "reject", "cancel", "analysis", "details"}
-REQUEST_ACTIONS = {"approve", "reject", "cancel", "analysis", "details", "acknowledge", "refresh", "skip"}
+REQUEST_ACTIONS = {"approve", "reject", "cancel", "analysis", "details", "acknowledge", "refresh", "skip", "preview"}
 
 
 def proposal_callback(action: str, proposal_id: str) -> str:

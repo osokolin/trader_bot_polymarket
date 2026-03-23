@@ -7,7 +7,7 @@ from bot.domain.enums import (
     OperatorActionRequestStatus,
     OperatorActionRequestType,
 )
-from bot.domain.models import OperatorActionRequest, OperatorAlert, TradeProposal
+from bot.domain.models import ExecutionPreviewReviewContext, OperatorActionRequest, OperatorAlert, TradeProposal
 from bot.services.decision_review import DecisionReview
 from bot.services.polymarket_diagnostics import DiagnosticCheckResult, PolymarketDiagnosticsResult
 
@@ -23,6 +23,7 @@ class DecisionInboxRequestView:
     alert: OperatorAlert | None = None
     diagnostics_label: str | None = None
     diagnostics_check: DiagnosticCheckResult | None = None
+    execution_preview_context: ExecutionPreviewReviewContext | None = None
 
 
 @dataclass(slots=True)

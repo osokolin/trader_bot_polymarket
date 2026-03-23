@@ -598,6 +598,7 @@ Supported commands visible in the repository docs include:
 - `/review`
 - `/review-next`
 - `/request <id>`
+- `/preview <request_id>`
 - `/proposals`
 - `/proposal <id>`
 - `/approve <id>`
@@ -611,8 +612,18 @@ Operational meaning:
 - `/inbox` — inspect request list
 - `/review` — show open review queue
 - `/review-next` — jump to next open request
-- `/request <id>` — inspect a specific request
+- `/request <id>` — inspect a specific request, including latest non-live execution preview context for proposal review cards
+- `/preview <request_id>` — explicitly refresh a fresh non-live execution preview for the current proposal review request
 - `/approve` / `/reject` / `/cancel` — operator actions on proposals/requests where supported
+
+Preview states shown during review:
+
+- `preview_ok` — latest preview reconciled cleanly
+- `preview_warn` — preview succeeded but surfaced warnings
+- `preview_failed` — preview could not prepare a safe dry-run artifact
+- `preview_missing` — no preview has been generated yet
+
+Preview in review is decision support only. It does not create intents, submit orders, or change `ManualExecutionGuard`.
 
 Keep Telegram access restricted to approved chat IDs.
 

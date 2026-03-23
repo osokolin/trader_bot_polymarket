@@ -11,6 +11,7 @@ from bot.domain.enums import (
 from bot.domain.models import OperatorActionRequest, OperatorActionRequestRecord, OperatorAlert, TradeProposal
 from bot.services.audit_log import AuditLogService
 from bot.services.decision_review import DecisionReview, DecisionReviewService
+from bot.services.execution_preview import ExecutionPreviewService
 from bot.services.inbox_handlers import (
     DecisionInboxError,
     DecisionInboxRequestHandler,
@@ -44,6 +45,7 @@ class DecisionInboxService:
         audit_log: AuditLogService,
         proposal_service: ProposalLifecycleService,
         decision_review_service: DecisionReviewService,
+        execution_preview_service: ExecutionPreviewService,
         notifications_service: OperatorNotificationsService,
         diagnostics_service: PolymarketDiagnosticsService,
         handlers: dict[OperatorActionRequestType, DecisionInboxRequestHandler] | None = None,
@@ -53,12 +55,14 @@ class DecisionInboxService:
         self.audit_log = audit_log
         self.proposal_service = proposal_service
         self.decision_review_service = decision_review_service
+        self.execution_preview_service = execution_preview_service
         self.notifications_service = notifications_service
         self.diagnostics_service = diagnostics_service
         self.handlers = handlers or build_default_inbox_handlers(
             settings=settings,
             proposal_service=proposal_service,
             decision_review_service=decision_review_service,
+            execution_preview_service=execution_preview_service,
             notifications_service=notifications_service,
             diagnostics_service=diagnostics_service,
         )
