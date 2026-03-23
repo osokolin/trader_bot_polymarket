@@ -266,7 +266,6 @@ class ExecutionPreviewService:
             "Execution preview looks consistent.",
             None,
         )
-
     def _log_preview_result(self, preview: ExecutionPreview) -> None:
         payload = {
             "preview_id": preview.preview_id,
