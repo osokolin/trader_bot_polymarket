@@ -149,3 +149,26 @@ polymarket_gateway:
   api_passphrase_env_var: POLYMARKET_API_PASSPHRASE
   # This milestone does not enable real submission by default.
   allow_live_order_submission: false
+
+strategies:
+  # Master switch for the Signal Engine v1 layer.
+  enabled: true
+  # Legacy bidirectional / hedged / both-sides scenarios are unsafe on 5m BTC
+  # markets and stay disabled by default. Flipping this on must coexist with
+  # manual approval and auto-execute disabled (enforced by config validation).
+  legacy_bidirectional_enabled: false
+  # Momentum Lag Exploit strategy — proposals only.
+  momentum_lag_enabled: true
+  # Mean Reversion strategy — proposals only.
+  mean_reversion_enabled: true
+  # Cross-market Mispricing scanner placeholder — off until data sources wired.
+  mispricing_enabled: false
+  # Minimum confidence for signal admission.
+  min_confidence: 0.70
+  # Auto-execution is explicitly disabled; null guards against accidental flips.
+  auto_execute_min_confidence: null
+  # Hard caps used by the admission policy.
+  max_spread_bps: 150
+  min_liquidity_usd: 3000
+  min_time_to_resolution_seconds: 900
+  max_position_fraction: 0.05
