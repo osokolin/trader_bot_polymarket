@@ -20,6 +20,7 @@ from bot.config.models import (
     SafetyConfig,
     Settings,
     SourcesConfig,
+    StrategiesConfig,
     WhitelistConfig,
 )
 from bot.domain.enums import BotMode, SourceType
@@ -155,6 +156,31 @@ def _validate_settings(settings: Settings) -> None:
     if settings.mode == BotMode.SEMI_AUTO and settings.polymarket_gateway.allow_live_order_submission:
         raise ConfigError("semi_auto mode forbids polymarket_gateway.allow_live_order_submission = true")
 
+    _ensure_ratio("strategies.min_confidence", settings.strategies.min_confidence)
+    _ensure_ratio("strategies.max_position_fraction", settings.strategies.max_position_fraction)
+    _ensure_non_negative("strategies.max_spread_bps", settings.strategies.max_spread_bps)
+    _ensure_non_negative("strategies.min_liquidity_usd", settings.strategies.min_liquidity_usd)
+    if settings.strategies.min_time_to_resolution_seconds < 0:
+        raise ConfigError("strategies.min_time_to_resolution_seconds must be >= 0")
+    if settings.strategies.auto_execute_min_confidence is not None:
+        _ensure_ratio(
+            "strategies.auto_execute_min_confidence",
+            settings.strategies.auto_execute_min_confidence,
+        )
+        if settings.approvals.auto_execute_disabled:
+            raise ConfigError(
+                "strategies.auto_execute_min_confidence must be null while approvals.auto_execute_disabled = true"
+            )
+    if settings.strategies.legacy_bidirectional_enabled:
+        if settings.mode == BotMode.SEMI_AUTO and not settings.approvals.manual_approval_required:
+            raise ConfigError(
+                "strategies.legacy_bidirectional_enabled requires approvals.manual_approval_required = true"
+            )
+        if not settings.approvals.auto_execute_disabled:
+            raise ConfigError(
+                "strategies.legacy_bidirectional_enabled requires approvals.auto_execute_disabled = true"
+            )
+
 
 def _to_settings(
     data: dict[str, Any],
@@ -184,9 +210,27 @@ def _to_settings(
         blacklist=BlacklistConfig(**blacklist),
         market_opportunity_alerts=MarketOpportunityAlertsConfig(**_require(data, "market_opportunity_alerts")),
         polymarket_gateway=PolymarketGatewayConfig(**_require(data, "polymarket_gateway")),
+        strategies=_to_strategies_config(_require(data, "strategies")),
     )
     _validate_settings(settings)
     return settings
+
+
+def _to_strategies_config(data: dict[str, Any]) -> StrategiesConfig:
+    auto_execute = data.get("auto_execute_min_confidence")
+    return StrategiesConfig(
+        enabled=bool(data["enabled"]),
+        legacy_bidirectional_enabled=bool(data["legacy_bidirectional_enabled"]),
+        momentum_lag_enabled=bool(data["momentum_lag_enabled"]),
+        mean_reversion_enabled=bool(data["mean_reversion_enabled"]),
+        mispricing_enabled=bool(data["mispricing_enabled"]),
+        min_confidence=float(data["min_confidence"]),
+        auto_execute_min_confidence=None if auto_execute is None else float(auto_execute),
+        max_spread_bps=float(data["max_spread_bps"]),
+        min_liquidity_usd=float(data["min_liquidity_usd"]),
+        min_time_to_resolution_seconds=int(data["min_time_to_resolution_seconds"]),
+        max_position_fraction=float(data["max_position_fraction"]),
+    )
 
 
 def load_settings(config_dir: Path, profile: str = "balanced") -> Settings:

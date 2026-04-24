@@ -54,6 +54,12 @@ from bot.services.polymarket_diagnostics import PolymarketDiagnosticsService
 from bot.services.market_sync import LiveMarketDataService
 from bot.services.realtime_market_feed import RealtimeMarketFeedService
 from bot.services.runtime_safety import build_runtime_safety_snapshot
+from bot.services.signals.engine import SignalEngine
+from bot.services.signals.presenter import (
+    strategy_diagnostics_lines,
+    strategy_evaluation_lines,
+)
+from bot.services.signals.scoring import MarketFeatures
 from bot.ui import serve_ui
 from bot.telegram.auth import TelegramOperatorAuth
 from bot.telegram.bot_app import build_telegram_bot_app
@@ -213,6 +219,21 @@ def build_parser() -> argparse.ArgumentParser:
     diagnostics = subparsers.add_parser("diagnostics")
     diagnostics_sub = diagnostics.add_subparsers(dest="diagnostics_command")
     diagnostics_sub.add_parser("polymarket")
+
+    strategies = subparsers.add_parser("strategies")
+    strategies_sub = strategies.add_subparsers(dest="strategies_command")
+    strategies_sub.add_parser("diagnostics")
+    strategies_evaluate = strategies_sub.add_parser("evaluate")
+    strategies_evaluate.add_argument("--market", required=True)
+    strategies_evaluate.add_argument("--market-slug", default="")
+    strategies_evaluate.add_argument("--liquidity", type=float, default=0.0)
+    strategies_evaluate.add_argument("--spread-bps", type=float, default=0.0)
+    strategies_evaluate.add_argument("--seconds-to-resolution", type=int, default=0)
+    strategies_evaluate.add_argument("--current-probability", type=float, default=0.5)
+    strategies_evaluate.add_argument("--btc-move-pct", type=float, default=0.0)
+    strategies_evaluate.add_argument("--pm-move-pct", type=float, default=0.0)
+    strategies_evaluate.add_argument("--recent-move-pct", type=float, default=0.0)
+    strategies_evaluate.add_argument("--has-news-trigger", action="store_true")
 
     auth = subparsers.add_parser("auth")
     auth_sub = auth.add_subparsers(dest="auth_command")
@@ -392,6 +413,30 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         finally:
             diagnostics_bootstrap.close()
+    if args.command == "strategies":
+        engine = SignalEngine(settings.strategies)
+        if args.strategies_command == "diagnostics":
+            _print_lines(strategy_diagnostics_lines(engine.diagnostics()))
+            return 0
+        if args.strategies_command == "evaluate":
+            features = MarketFeatures(
+                market_id=args.market,
+                market_slug=args.market_slug or args.market,
+                liquidity_usd=args.liquidity,
+                spread_bps=args.spread_bps,
+                seconds_to_resolution=args.seconds_to_resolution,
+                current_probability=args.current_probability,
+                btc_move_pct=args.btc_move_pct,
+                polymarket_probability_move_pct=args.pm_move_pct,
+                recent_probability_move_pct=args.recent_move_pct,
+                has_news_trigger=args.has_news_trigger,
+            )
+            evaluation = engine.evaluate(features)
+            _print_lines(strategy_diagnostics_lines(engine.diagnostics()))
+            _print_lines(strategy_evaluation_lines(evaluation))
+            return 0
+        parser.print_help()
+        return 0
     container = build_app_container(
         settings,
         args.profile,

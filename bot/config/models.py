@@ -118,6 +118,21 @@ class PolymarketGatewayConfig:
 
 
 @dataclass(slots=True)
+class StrategiesConfig:
+    enabled: bool
+    legacy_bidirectional_enabled: bool
+    momentum_lag_enabled: bool
+    mean_reversion_enabled: bool
+    mispricing_enabled: bool
+    min_confidence: float
+    auto_execute_min_confidence: float | None
+    max_spread_bps: float
+    min_liquidity_usd: float
+    min_time_to_resolution_seconds: int
+    max_position_fraction: float
+
+
+@dataclass(slots=True)
 class Settings:
     mode: BotMode
     bankroll: BankrollConfig
@@ -133,3 +148,4 @@ class Settings:
     blacklist: BlacklistConfig
     market_opportunity_alerts: MarketOpportunityAlertsConfig
     polymarket_gateway: PolymarketGatewayConfig
+    strategies: StrategiesConfig
