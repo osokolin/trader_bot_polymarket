@@ -1,90 +1,228 @@
 # Polymarket AI Bot
 
-Policy-first, semi-automatic operator assistant for Polymarket-style trading workflows.
+Полу­автомати­ческий operator-assistant для торговли на Polymarket-style рынках.
+Архитектура — **policy-first**, режим — **semi_auto**, реальное исполнение
+ордеров **выключено по умолчанию**.
 
-Current defaults remain strict:
-- `architecture: policy-first`
-- `mode: semi_auto`
-- live execution disabled
-- no autonomous execution
+Бот не торгует сам. Он собирает рыночные данные, формирует кандидатные
+proposals, прогоняет их через слой политик, складывает в decision inbox и ждёт
+ручного подтверждения оператором через CLI / Web UI / Telegram. Любой ответ
+извне (Polymarket, веб-сокеты) на которое нельзя положиться — обрабатывается
+**fail-closed**.
 
-The repository currently includes:
-- proposal generation and policy gating
-- proposal lifecycle with approval, edits, rejection, TTL expiry, and revalidation
-- public Polymarket Gamma/CLOB market-data adapters plus market snapshot cache
-- persisted order intents and simulation-only execution pipeline
-- optional Polymarket gateway boundary for controlled metadata discovery and future execution plumbing
-- paper execution, decision review, execution evaluation, outcome analysis
-- CLI operator tooling
-- lightweight operator dashboard UI
+---
 
-See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md), [docs/CONFIG_REFERENCE.md](./docs/CONFIG_REFERENCE.md), and [docs/SEMI_AUTO_WORKFLOW.md](./docs/SEMI_AUTO_WORKFLOW.md).
-Deployment and server operations are documented in [docs/DEPLOY.md](./docs/DEPLOY.md) and [docs/RUNBOOK.md](./docs/RUNBOOK.md).
+## Жёсткие инварианты
 
-## Local Setup
+Эти правила зашиты в код и в `.agents/architecture-guardrails.md`:
 
-Requirements:
-- Python 3.12+
+1. `architecture: policy-first`
+2. `mode: semi_auto`
+3. live-исполнение выключено
+4. нет автономного исполнения (никаких автозаходов от модели)
+5. CLI и UI — тонкие, бизнес-логика только в `bot/services/`
+6. вся внешняя интеграция — только через `bot/adapters/`
+7. при stale / malformed / недоступных внешних данных — fail-closed
+8. без green-теста, review и security-проверки коммитов в `main` нет
 
-Install:
+См. [AGENTS.md](./AGENTS.md), `.agents/architecture-guardrails.md`.
+
+---
+
+## Что уже реализовано
+
+- генерация proposals из рыночного контекста и вероятностных снапшотов;
+- политики: market / risk / execution / AI-policy + `CompositePolicy`;
+- полный lifecycle proposal: pending → approve / edit / reject / TTL-expiry /
+  revalidate;
+- адаптеры публичных API Polymarket: Gamma (метаданные), CLOB (`/book`,
+  `/midpoint`, `/price`), market WebSocket с reconnect/backoff;
+- кэш market snapshot и сверка cache-vs-live;
+- persisted order intents и **симуляционный** execution pipeline (paper-fills с
+  учётом bid/ask, latency, partial fills, expiry, отмен);
+- decision review, execution evaluation, outcome analysis, reporting;
+- алерты, watchlists, saved views, exports, digests;
+- опциональный `PolymarketGateway` для metadata discovery и
+  `execution-preview` (audit-only, не создаёт intents и не отправляет ордера);
+- Signal Engine v1 (momentum-lag и mean-reversion как proposal-генераторы,
+  legacy bidirectional / both-sides сценарии выключены);
+- три operator-интерфейса (CLI, Web UI, Telegram) поверх одного сервисного
+  слоя;
+- веб-аутентификация с argon2-хешированием паролей, server-side-сессиями и
+  remember-cookies;
+- demo-сидер, smoke-тесты, миграции схемы.
+
+Подробнее: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md),
+[docs/ARCHITECTURE_OVERVIEW.md](./docs/ARCHITECTURE_OVERVIEW.md),
+[docs/ARCHITECTURE_RU.md](./docs/ARCHITECTURE_RU.md),
+[docs/CONFIG_REFERENCE.md](./docs/CONFIG_REFERENCE.md),
+[docs/SEMI_AUTO_WORKFLOW.md](./docs/SEMI_AUTO_WORKFLOW.md),
+[docs/RUNBOOK.md](./docs/RUNBOOK.md), [docs/DEPLOY.md](./docs/DEPLOY.md).
+
+---
+
+## Архитектура верхнего уровня
+
+```text
+   market data (Gamma / CLOB / WS)
+            │
+            ▼
+   probability + research snapshot
+            │
+            ▼
+   proposal engine + sizing
+            │
+            ▼
+   composite policy (market | risk | execution | ai)
+            │
+            ▼
+   proposal lifecycle  ──►  decision inbox  ──►  operator review
+                                                       │
+                                                       ▼
+                                               approve / reject / edit
+                                                       │
+                                                       ▼
+                                          revalidation (fail-closed)
+                                                       │
+                                                       ▼
+                                              order intent (semi_auto)
+                                                       │
+                                                       ▼
+                                            paper execution simulation
+                                                       │
+                                                       ▼
+                                 decision review · evaluation · outcome analysis
+```
+
+---
+
+## Структура репозитория
+
+```
+bot/
+  adapters/polymarket/   Gamma / CLOB / WebSocket / errors / models
+  cli/                   CLI-приложение (entry point: `bot`)
+  config/                загрузка YAML, профили, env-overrides, инварианты
+  domain/                enum'ы и модели (proposals, intents, signals…)
+  demo/                  demo-сидер локального операторского состояния
+  integrations/          PolymarketGateway (опциональный execution boundary)
+  policies/              market / risk / execution / ai / composite
+  prompts/               текстовые шаблоны (без LLM в execution-пути)
+  security/              trading_signer (изоляция приватного ключа)
+  services/              вся бизнес-логика
+    signals/             Signal Engine v1 (admission, scoring, engine)
+    inbox_handlers/      обработчики decision inbox для разных типов запросов
+  storage/               SQLite-схема, миграции, репозитории
+  telegram/              Telegram-бот (router / formatter / actions / auth)
+  ui/                    Web dashboard (server / app / presenter)
+  utils/                 общие утилиты
+
+config/
+  base.yaml              базовая политика
+  conservative.yaml | balanced.yaml | aggressive.yaml   профили
+  whitelist.yaml | blacklist.yaml | sources.yaml
+
+docs/                    архитектурные и операционные документы
+scripts/dev              унифицированный entrypoint разработчика
+tests/                   модульные и интеграционные тесты
+```
+
+### Ключевые сервисы (`bot/services/`)
+
+`proposal_engine`, `proposal_lifecycle`, `policy_engine`, `sizing`,
+`signals/*`, `market_data`, `market_catalog`, `market_research`,
+`market_sync`, `market_opportunity_scanner`, `market_opportunity_alerts`,
+`opportunity_proposal_bridge`, `realtime_market_feed`, `probability_engine`,
+`execution_pipeline`, `execution_engine`, `execution_guard`,
+`execution_preview`, `execution_evaluation`, `decision_inbox`,
+`decision_review`, `outcome_analysis`, `analytics`, `reporting`,
+`saved_views`, `audit_log`, `runtime_safety`, `polymarket_diagnostics`,
+`web_auth`, `telegram_operator_service`, `operator_notifications`.
+
+### Storage
+
+SQLite, миграции в `bot/storage/migrations/` (`v001_initial`,
+`v002_web_auth`, `v003_execution_previews`). Репозитории на каждый
+агрегат: `proposals_repo`, `execution_repo`, `execution_preview_repo`,
+`alerts_repo`, `reviews_repo`, `inbox_repo`, `views_repo`,
+`market_data_repo`, `auth_repo`.
+
+---
+
+## Конфигурация
+
+Конфиг — YAML в `config/`, поверх — профили и env-переменные с
+префиксом `BOT_`. Полный референс — [docs/CONFIG_REFERENCE.md](./docs/CONFIG_REFERENCE.md).
+
+Основные блоки `config/base.yaml`:
+
+- `mode` — `paper | manual_only | semi_auto | live_small | live_full` (по
+  умолчанию `semi_auto`, остальное жёстко ограничено инвариантами);
+- `bankroll` — общий капитал, резерв, дневные/недельные лимиты потерь;
+- `position_limits` — лимиты на позицию / тему / число открытых / нерешённый
+  exposure;
+- `market_filters` — allowed/blocked categories, мин. ликвидность, макс.
+  спред, время до резолва, требование orderbook;
+- `entry_rules` / `exit_rules` — пороги edge, confidence, agreement,
+  условия выхода;
+- `ai_policy` — AI **только скорит**, не размещает ордера;
+- `approvals` — `manual_approval_required: true`,
+  `auto_execute_disabled: true`, TTL proposal'а;
+- `safety` — kill-switch, паузы по API-ошибкам / сериям убытков /
+  неожиданному состоянию позиций;
+- `market_opportunity_alerts` — категории/ключевые слова, пороги,
+  `poll_interval_seconds`;
+- `polymarket_gateway` — опциональный adapter boundary, по умолчанию
+  выключен и в `dry_run`; секреты — только из env;
+- `strategies` — Signal Engine v1: какие стратегии включены, пороги,
+  жёсткие caps; legacy bidirectional/both-sides сценарии **отключены**.
+
+Шаблон env-файла — [.env.example](./.env.example).
+
+---
+
+## Локальная установка
+
+Требования: **Python 3.12+**.
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
-```
-
-Optional local env file:
-
-```bash
-cp .env.example .env
-```
-
-Validate config:
-
-```bash
+cp .env.example .env                       # опционально
+export BOT_DATABASE_URL=sqlite:///bot.db   # изолированная БД для smoke-runs
 .venv/bin/bot config validate
 ```
 
-Module entrypoint also works:
+Альтернативный entry-point: `python -m bot.cli.app config validate`.
+
+---
+
+## Унифицированный entry-point разработчика
 
 ```bash
-.venv/bin/python -m bot.cli.app config validate
-```
-
-Use an isolated local database for smoke/demo runs:
-
-```bash
-export BOT_DATABASE_URL=sqlite:///bot.db
-```
-
-## Developer Verification
-
-Canonical day-to-day verification commands from the repo root:
-
-```bash
-scripts/dev verify-fast
-scripts/dev verify
-```
-
-What they do:
-- `scripts/dev verify-fast`
-  runs tests, linting, targeted type checking, and syntax compilation
-- `scripts/dev verify`
-  runs the full fast verification flow plus config validation and demo seed
-
-Helpful individual commands:
-
-```bash
+scripts/dev verify        # тесты + lint + targeted mypy + py_compile + config + seed
+scripts/dev verify-fast   # то же, без config-validation и seed
 scripts/dev test
+scripts/dev config
+scripts/dev seed
+scripts/dev scan
+scripts/dev doctor
+```
+
+Точечные команды:
+
+```bash
 .venv/bin/python -m ruff check bot tests scripts
 .venv/bin/python -m mypy
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m py_compile $(find bot tests -name '*.py' | sort)
 ```
 
-These commands are intended to run directly from the project root without extra `PYTHONPATH` setup.
+---
 
-## CLI Usage
+## CLI
 
-Common commands:
+Entry point — `bot` (см. `pyproject.toml`). Самые ходовые команды:
 
 ```bash
 bot proposals list --scope active
@@ -92,398 +230,275 @@ bot proposals latest-approved
 bot proposals decision-review <proposal_id>
 bot proposals execution-preview <proposal_id>
 bot proposals execution-preview-history <proposal_id> --limit 20
+
 bot execution-previews list --scope failed --limit 20
 bot execution-previews summary
+
 bot intents list --scope terminal
 bot intents latest-simulated
+
 bot alerts list --state open
+bot alerts scan-opportunities [--limit N]
+
+bot markets catalog --scope active|closed|all [--limit N]
+bot markets scan [--min-edge N] [--min-liquidity N] [--limit N]
+bot markets draft-opportunities [--min-edge N] [--min-liquidity N] [--limit N]
 bot markets live <market_id>
 bot markets cache <market_id>
 bot markets stream-once <market_id>
+
+bot events catalog --scope active|closed|all [--limit N]
+
 bot analysis outcomes --group-by market
 bot portfolio summary
+bot diagnostics polymarket
+bot demo seed
 ```
 
-Seed local demo data for operator testing:
+`bot markets scan` — read-only поиск возможностей: считает
+`edge = fair_probability - market_price`, фильтрует по абсолютной величине,
+сортирует по edge и confidence.
+
+`bot alerts scan-opportunities` — отдельная operator-команда для discovery
+alerts: матчит категории/ключевые слова, проверяет high-liquidity и
+resolving-soon пороги, дедуплицирует. Ничего не исполняет.
+
+`bot markets draft-opportunities` — создаёт **только draft proposals** через
+существующий lifecycle, никаких intents/orders.
+
+---
+
+## Web UI
+
+UI — отдельная команда, требует предварительной настройки пароля:
 
 ```bash
-.venv/bin/bot demo seed
-```
+set -a; source ~/.config/trader_bot_polymarket.env; set +a
+BOT_UI_PASSWORD='choose-a-strong-password' \
+  .venv/bin/bot auth set-password --username osokolin
 
-This populates the local `bot.db` with:
-- pending and approved proposals
-- prepared and simulated intents
-- alerts and watchlist state
-- decision review snapshots
-- execution evaluation snapshots
-- outcome analysis snapshots
-- a couple of saved views
-
-## UI Usage
-
-The production web UI now requires authentication. Create or update the configured operator password before starting the UI:
-
-```bash
-set -a
-source ~/.config/trader_bot_polymarket.env
-set +a
-BOT_UI_PASSWORD='choose-a-strong-password' .venv/bin/bot auth set-password --username osokolin
-```
-
-For local development over plain HTTP, keep `BOT_UI_SECURE_COOKIES=false`. In production behind HTTPS, leave secure cookies enabled.
-
-Start the operator dashboard:
-
-```bash
 .venv/bin/bot ui serve --host 127.0.0.1 --port 8080
 ```
 
-Then open:
+Локально по plain HTTP оставляйте `BOT_UI_SECURE_COOKIES=false`.
+В проде — secure cookies всегда включены, UI слушает только
+`127.0.0.1:8080`, ходим через SSH-туннель.
 
-```text
-http://127.0.0.1:8080
-```
-
-For the current production server, the UI is intentionally bound to
-`127.0.0.1:8080` and accessed through an SSH tunnel:
-
-```bash
-ssh -i ~/.ssh/id_ed25519 -L 8080:127.0.0.1:8080 tg_bot@148.253.209.168
-```
-
-Then open:
-
-```text
-http://127.0.0.1:8080/login
-```
-
-Available UI areas:
-- dashboard home
-- proposals and intents
-- alerts with acknowledge/dismiss/resolve actions
-- research and probability snapshots
-- live market data inspection
-- market catalog browsing with saved browse preferences
-- integrated decision review pages
-- outcome analysis
-- saved views
-- web auth security page for logout and auth revocation
-- export pages for decision reviews, execution evaluations, and outcome analysis
+Что есть в UI: dashboard home, proposals, intents, alerts, research,
+probability snapshots, live market data, market catalog с saved browse
+preferences, integrated decision review, outcome analysis, saved views,
+страница безопасности (logout / revoke), экспорт страниц decision review /
+execution evaluation / outcome analysis.
 
 ### Web Auth
 
-Web auth is single-user for now:
-- username: `osokolin`
-- password: configured out-of-band through `bot auth set-password`
+- single-user (`osokolin`), пароль задаётся через `bot auth set-password`,
+  в репозиторий не коммитится;
+- argon2-cffi-хеши + server-side sessions + HttpOnly cookies;
+- опциональный remember-browser cookie с серверным хешем токена;
+- `/auth/security` — отзыв всех активных сессий и remember-токенов.
 
-Auth behavior:
-- unauthenticated browsers are redirected to `/login`
-- session auth uses server-side sessions and HttpOnly cookies
-- optional remember-browser uses a separate HttpOnly cookie with server-side hashed token storage
-- remember-browser tokens can be revoked for the current browser
-- all active sessions and remember tokens can be revoked from `/auth/security`
-- no plaintext password is stored in the repo
+---
 
-## Production Deployment
-
-The current production deployment model is:
-
-- source pulled from `main`
-- services run as `tg_bot`
-- project-local `.venv` used for runtime and deploy updates
-- Telegram bot and web UI run as user-level systemd services
-- web UI stays on `127.0.0.1:8080`
-- only `22/tcp` needs to be open when using SSH tunneling for the UI
-
-Canonical production update flow:
-
-1. `git fetch` / `git pull`
-2. refresh `.venv` with `pip install -e .`
-3. validate config
-4. restart `trader-bot-telegram.service` and `trader-bot-ui.service`
-
-For the full production guide, see [docs/DEPLOY.md](./docs/DEPLOY.md).
-
-## Optional Polymarket Gateway
-
-This repository can now build an optional `PolymarketGateway` slice, but the
-boundary remains strict:
-
-- our strategy, scoring, market binding, policy, review, calibration, and dry-run flow remain the source of truth
-- the gateway is an external adapter surface for market metadata discovery and execution plumbing only
-- the gateway is config-gated and disabled by default
-- private key usage is isolated to `bot/security/trading_signer.py`
-- no LLM, prompt, or autonomous agent path is introduced into execution
-- live order submission is intentionally not enabled in this milestone
-
-The new config block lives in [`config/base.yaml`](./config/base.yaml):
-
-- `polymarket_gateway.enable_polymarket_gateway`
-- `polymarket_gateway.dry_run`
-- `polymarket_gateway.gamma_base_url`
-- `polymarket_gateway.clob_base_url`
-- `polymarket_gateway.*_env_var`
-
-Secret material stays in environment variables only; no private key or API
-credentials are stored in YAML.
-
-### Gateway-Backed Execution Preview
-
-The gateway now supports an explicit non-live preparation path for integration
-validation:
-
-```bash
-bot proposals execution-preview <proposal_id>
-```
-
-This command:
-- uses the optional `PolymarketGateway` to resolve market metadata and quote assumptions
-- returns a structured preview artifact for operator inspection
-- persists the preview as a non-live audit record for later inspection
-- stays `dry_run=True`
-- does not create an order intent
-- does not submit an order
-- does not weaken `ManualExecutionGuard`
-
-The preview is intended to answer whether our proposal layer and the gateway
-agree on market id, token/outcome mapping, side, price, and size. It is a
-validation artifact for future redesign work, not a live execution path.
-
-That same persisted preview trail now feeds operator review:
-- `/request <id>` and `/review-next` show the latest preview state for proposal review requests
-- `preview_ok`, `preview_warn`, `preview_failed`, and `preview_missing` are surfaced as compact review signals
-- the review card also derives a soft hint from preview state: `OK`, `CAUTION`, `RISKY`, or `NO PREVIEW`
-- `/preview <request_id>` or the inline `Preview` action explicitly refreshes preview state from the review flow
-- refreshed previews remain strictly non-live and keep approval separate from any future submission path
-
-Inspection commands:
-
-```bash
-bot proposals execution-preview-history <proposal_id> --limit 20
-bot execution-previews list --scope recent --limit 20
-bot execution-previews list --scope failed --limit 20
-bot execution-previews list --scope warnings --limit 20
-bot execution-previews summary
-```
-
-These commands let operators answer:
-- what happened for a specific proposal
-- which previews are failing most recently
-- which previews succeeded with warnings
-- how many previews are succeeding, warning, or failing overall
-## UI Screenshots
-
-![Dashboard Home](./docs/images/ui-dashboard-home.png)
-![Proposal Detail](./docs/images/ui-proposal-detail.png)
-![Integrated Decision Review](./docs/images/ui-decision-review.png)
-![Outcome Analysis](./docs/images/ui-outcome-analysis.png)
-
-## Demo Workflow
-
-1. Seed demo data:
-
-```bash
-.venv/bin/bot demo seed
-```
-
-2. Inspect operator state from the CLI:
-
-```bash
-.venv/bin/bot alerts list --state open
-.venv/bin/bot proposals list --scope approved
-.venv/bin/bot intents list --scope terminal
-.venv/bin/bot markets live demo_rates_2026
-```
-
-3. Start the UI:
-
-```bash
-.venv/bin/bot ui serve
-```
-
-Module entrypoint works as well:
-
-```bash
-.venv/bin/python -m bot.cli.app demo seed
-.venv/bin/python -m bot.cli.app proposals list --scope approved
-.venv/bin/python -m bot.cli.app ui serve --host 127.0.0.1 --port 8080
-```
-
-4. In the UI:
-- check the dashboard summary cards
-- open an approved proposal
-- inspect live market data for its market
-- open its integrated decision review
-- inspect the latest execution evaluation
-- open saved views
-- open export pages from decision review or analysis pages
-
-## Telegram Operator Inbox
-
-Start the read-only Telegram operator inbox:
+## Telegram operator inbox
 
 ```bash
 .venv/bin/bot telegram serve
 ```
 
-Required environment:
+Env:
 
 ```bash
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_ALLOWED_CHAT_IDS=123456789,987654321
 ```
 
-Supported commands:
-- `/start`
-- `/help`
-- `/status`
-- `/diagnostics`
-- `/scan`
-- `/inbox`
-- `/review`
-- `/review-next`
-- `/request <id>`
-- `/preview <request_id>`
-- `/proposals`
-- `/proposal <id>`
-- `/approve <id>`
-- `/reject <id>`
-- `/cancel <id>`
-- `/analysis <id>`
-- `/skip <request_id>`
-- `/alerts`
+Команды: `/start`, `/help`, `/status`, `/diagnostics`, `/scan`, `/inbox`,
+`/review`, `/review-next`, `/request <id>`, `/preview <request_id>`,
+`/proposals`, `/proposal <id>`, `/approve <id>`, `/reject <id>`,
+`/cancel <id>`, `/analysis <id>`, `/skip <request_id>`, `/alerts`.
 
-Phase 2 adds safe proposal lifecycle actions:
-- allowlisted operators may approve, reject, cancel, and request additional analysis for proposals
-- proposal actions reuse the existing lifecycle and decision-review services
-- inline buttons are included on draft proposal notifications and proposal detail responses
+Что важно:
 
-Phase 3 adds a persisted Telegram decision inbox:
-- operator action requests are stored server-side and exposed via `/inbox` and `/request <id>`
-- Telegram inbox cards now target `request_id` values for proposal review, alert acknowledgement, and diagnostics refresh/detail flows
-- proposal actions remain lifecycle-safe and are resolved through the decision inbox service before reaching proposal lifecycle methods
+- персистентная decision inbox: запросы оператора живут в БД, не в памяти
+  процесса;
+- `/review` + `/review-next` — последовательная очередь review-карточек;
+- review-карточка для proposals показывает последний persisted
+  `execution-preview` и hint (`OK` / `CAUTION` / `RISKY` / `NO PREVIEW`) —
+  это **decision support**, hint-ы advisory, approval-семантика и
+  `ManualExecutionGuard` не меняются;
+- `/approve` / `/reject` / `/cancel` идут через сервисы lifecycle и
+  decision-inbox, не дёргают lifecycle напрямую;
+- автозапуск opportunity scan по `market_opportunity_alerts.poll_interval_seconds`.
 
-Phase 4 adds a sequential Telegram review queue:
-- `/review` shows the current open request queue
-- `/review-next` opens the next open request in created order
-- proposal review cards surface the latest persisted execution preview context when it exists
-- missing preview context is shown explicitly as `preview_missing`
-- `/preview <request_id>` and the inline `Preview` button explicitly refresh a non-live preview for the current review request
-- queue actions may move directly to the next request card
-- `/skip <request_id>` acknowledges a request and removes it from the open review queue
+Telegram остаётся execution-safe: не создаёт intents, не отправляет
+ордера, не правит runtime/config.
 
-Preview in review remains decision support only:
-- it is always labeled non-live / dry-run
-- hint labels are advisory only and do not enforce approval behavior
-- `OK` means the preview looks consistent, `CAUTION` means warnings need review, `RISKY` means preview failed, and `NO PREVIEW` means the operator may want to generate one
-- refreshing preview creates another preview audit record, but does not create intents or submit orders
-- warnings and validation failures are surfaced to the operator, but they do not yet hard-block approval
-- approval semantics and `ManualExecutionGuard` remain unchanged
+---
 
-Telegram still remains execution-safe:
-- no intent creation
-- no execution submission
-- no runtime/config mutation
-- no order posting
-- no live execution
+## Polymarket gateway и execution preview
 
-## Live Market Data
+`PolymarketGateway` — опциональный slice (`bot/integrations/polymarket_gateway.py`),
+выключен по умолчанию.
 
-Public market-data integration uses:
-- Gamma API for market/event metadata
-- CLOB REST endpoints for public `/book`, `/midpoint`, and `/price`
-- public market WebSocket updates with reconnect/backoff and receive-timeout fail-closed handling
-- cache-first market inspection with explicit refresh
+Принципы границы:
 
-Catalog entry points:
-- CLI: `bot markets catalog --scope active|closed|all [--limit N]`
-- CLI: `bot events catalog --scope active|closed|all [--limit N]`
-- CLI: `bot markets scan [--min-edge N] [--min-liquidity N] [--limit N]`
-- CLI: `bot alerts scan-opportunities [--limit N]`
-- CLI: `bot markets draft-opportunities [--min-edge N] [--min-liquidity N] [--limit N]`
-- Telegram: `/scan-opportunities [limit]`
-- UI: `/catalog/markets`
-- UI: `/catalog/events`
-- UI: `/catalog/markets/<slug>`
+- стратегия / scoring / market binding / policy / review / calibration /
+  dry-run остаются **источником истины**;
+- gateway — только metadata discovery и execution plumbing;
+- приватный ключ изолирован в `bot/security/trading_signer.py`;
+- секреты только из env (`POLYMARKET_PRIVATE_KEY`, `POLYMARKET_API_KEY`,
+  `POLYMARKET_API_SECRET`, `POLYMARKET_API_PASSPHRASE`);
+- LLM/агентов в execution-пути нет;
+- live-сабмит ордеров не включён.
 
-Examples:
-- `bot markets catalog --scope active`
-- `bot markets catalog --scope closed`
-- `bot markets catalog --scope all`
-- `bot markets scan --min-edge 0.08 --limit 10`
-- `bot markets draft-opportunities --min-edge 0.08 --limit 5`
+Команда `bot proposals execution-preview <proposal_id>`:
 
-Web catalog notes:
-- `/catalog/markets` is browse-only and does not alter policy scope, YAML config, or scanner behavior
-- supported web browse filters currently include category multi-select, active/closed/all scope, text search, min liquidity, orderbook-only, sort, page size, and page-based navigation
-- catalog filter help is shown via lightweight tooltip icons, and categories now use a compact multi-select dropdown instead of a permanently open checkbox block
-- supported sort modes from current market data are `liquidity_desc`, `volume_desc`, `ending_soon`, and `newest`
-- the operator can save the current catalog browse state as the default saved view and reload it later
-- clicking a market card opens a read-only detail page with market overview, rules, outcomes, related event markets, external Polymarket/Gamma links, persisted research/operator context, and proposal history for that market when available
+- использует gateway для резолва market metadata и quote-предположений;
+- возвращает структурированный preview;
+- **персистит preview как audit-record** — отдельная таблица
+  `execution_previews`;
+- `dry_run=True`, intent не создаёт, ордер не отправляет, не ослабляет
+  `ManualExecutionGuard`.
 
-`bot markets scan` is a read-only opportunity scan. It scans active markets, loads current cached-or-live market pricing, applies a deterministic scanner fair-value heuristic, computes `edge = fair_probability - market_price`, filters by absolute edge magnitude, and sorts the output by descending absolute edge then confidence.
+Тот же persisted-trail питает review:
 
-`bot alerts scan-opportunities` is the dedicated one-shot operator command for discovery alerts. It polls active markets, matches explicit tracked categories/keywords, checks high-liquidity and resolving-soon thresholds, looks for already-existing conservative system context, and creates deduplicated open alerts through the existing alert workflow. It does not create proposals or execution actions. Country-keyword matches are intentionally suppressed for clearly sports-like markets (for example FIFA/World Cup qualifying markets) to keep alert volume trustworthy.
+- `/request <id>` и `/review-next` показывают актуальный preview-state;
+- сигналы — `preview_ok`, `preview_warn`, `preview_failed`, `preview_missing`;
+- `/preview <request_id>` или inline-кнопка `Preview` форсят свежий
+  non-live preview.
 
-Telegram reuses the same service path via `/scan-opportunities [limit]` and returns a compact operator summary. A short in-memory cooldown prevents accidental re-trigger spam from the same runtime.
+Инспекция:
 
-When `bot telegram serve` is running, the same opportunity scan also runs automatically in the background on the configured `market_opportunity_alerts.poll_interval_seconds` cadence. The Telegram runtime only triggers the existing scan service; alert creation and Telegram delivery still flow through the existing alert pipeline.
-`bot markets draft-opportunities` stays read-only with respect to execution: it runs the scanner, skips markets that already have an active proposal, and creates safe draft proposals through the existing proposal lifecycle only. It does not approve proposals, create intents, or change execution behavior.
+```bash
+bot proposals execution-preview-history <proposal_id> --limit 20
+bot execution-previews list --scope recent  --limit 20
+bot execution-previews list --scope failed  --limit 20
+bot execution-previews list --scope warnings --limit 20
+bot execution-previews summary
+```
 
-Approval revalidation now fails closed if public market data is stale, malformed, or unavailable.
-This integration does not enable live trading:
-- no authenticated trading
-- no order posting
-- no user channel
-- live execution remains disabled
+---
+
+## Live market data
+
+Публичная market-data интеграция:
+
+- Gamma API — метаданные market/event;
+- CLOB REST — публичные `/book`, `/midpoint`, `/price`;
+- public market WebSocket с reconnect/backoff и **fail-closed**
+  receive-timeout'ом;
+- cache-first inspection + явный refresh.
+
+Approval revalidation **fail-closed**, если данные stale, malformed или
+недоступны.
+
+Никакой авторизованной торговли, user-channel'а, постинга ордеров — live
+execution выключен.
+
+---
 
 ## Diagnostics
-
-Use the read-only Polymarket connectivity diagnostics command to verify operator setup:
 
 ```bash
 .venv/bin/bot diagnostics polymarket
 ```
 
-It checks:
-- Gamma API reachability
-- CLOB REST reachability
-- public market WebSocket handshake smoke
-- resolved SQLite database configuration and connectivity
-
-Example output:
+Проверяет: Gamma reachability · CLOB reachability · public WebSocket
+handshake · resolved SQLite-коннект.
 
 ```text
 Polymarket diagnostics
 
-Gamma API .......... OK (reachable)
-CLOB REST .......... OK (reachable)
+Gamma API .......... OK
+CLOB REST .......... OK
 WebSocket .......... FAIL (timeout)
 Database ........... OK (sqlite ready)
 
 Overall status ..... FAIL
 ```
 
-## Automatic Opportunity Discovery
+---
 
-When the Telegram runtime is active, the bot periodically scans markets for new opportunities.
-
-Scan cadence is controlled by:
-
-market_opportunity_alerts.poll_interval_seconds
-
-New alerts are automatically delivered to Telegram.
-
-## Testing
-
-Run the test suite:
+## Demo workflow
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/bot demo seed
+.venv/bin/bot alerts list --state open
+.venv/bin/bot proposals list --scope approved
+.venv/bin/bot intents list --scope terminal
+.venv/bin/bot markets live demo_rates_2026
+.venv/bin/bot ui serve
 ```
 
-Compile check:
+Сидер заполняет локальный `bot.db`: pending/approved proposals,
+prepared/simulated intents, alerts, watchlist, decision review snapshots,
+execution evaluation snapshots, outcome analysis snapshots, пара saved
+views.
+
+---
+
+## Production deployment
+
+Текущая модель деплоя:
+
+- источник — `main`;
+- сервисы под пользователем `tg_bot`;
+- project-local `.venv` для рантайма и обновлений;
+- Telegram-бот и Web UI как user-level systemd-сервисы
+  (`trader-bot-telegram.service`, `trader-bot-ui.service`);
+- UI слушает только `127.0.0.1:8080`;
+- наружу открыт только `22/tcp` (SSH-туннель к UI).
+
+Цикл обновления:
+
+1. `git fetch && git pull`
+2. `pip install -e .` в `.venv`
+3. `bot config validate`
+4. `systemctl --user restart trader-bot-telegram.service trader-bot-ui.service`
+
+Полный гайд — [docs/DEPLOY.md](./docs/DEPLOY.md), оперативный — [docs/RUNBOOK.md](./docs/RUNBOOK.md).
+
+SSH-туннель к UI:
 
 ```bash
-.venv/bin/python -m py_compile $(find bot tests -name '*.py' | sort)
+ssh -i ~/.ssh/id_ed25519 -L 8080:127.0.0.1:8080 tg_bot@<server>
+# затем http://127.0.0.1:8080/login
 ```
+
+---
+
+## Multi-agent workflow
+
+Репозиторий построен под structured multi-agent flow:
+
+```
+Planner → Architect → Implementer → Tester → Reviewer → Security → Committer
+```
+
+Все определения и workflow'ы — в `.agents/` (см. `.agents/README.md`,
+`shared-context.md`, `architecture-guardrails.md`, `gates.md`). Гард-рейлы
+архитектуры — обязательные, не рекомендации.
+
+---
+
+## Скриншоты UI
+
+![Dashboard Home](./docs/images/ui-dashboard-home.png)
+![Proposal Detail](./docs/images/ui-proposal-detail.png)
+![Integrated Decision Review](./docs/images/ui-decision-review.png)
+![Outcome Analysis](./docs/images/ui-outcome-analysis.png)
+
+---
+
+## Пакет
+
+`pyproject.toml`:
+
+- name: `polymarket-bot`
+- python: `>=3.12`
+- runtime deps: `PyYAML`, `httpx`, `websockets`, `argon2-cffi`
+- dev deps: `pytest`, `ruff`, `mypy`, `types-PyYAML`
+- entry point: `bot = bot.cli.app:main`
+
+Версионирование — см. [CHANGELOG.md](./CHANGELOG.md).
